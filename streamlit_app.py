@@ -1,8 +1,3 @@
-El código que enviaste tiene algunos errores de estructura (como el st.set_page_config en el medio y bloques try/except entrecortados). He consolidado todo en una sola versión limpia, funcional y con todos los filtros (Fecha, Fábrica y Máquina) actuando al mismo tiempo sobre los gráficos y las métricas.
-
-Copia este código íntegro en tu archivo streamlit_app.py:
-
-Python
 
 import streamlit as st
 import pandas as pd
