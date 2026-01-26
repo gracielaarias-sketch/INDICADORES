@@ -54,13 +54,13 @@ total_eventos = len(df)
 tiempo_fallas = df[df['Nivel Evento 3'].str.contains('FALLA', case=False, na=False)]['Tiempo (Min)'].sum()
 
 # 3. Promedio SMED
-promedio_smed = df[df['Nivel Evento 3'].str.contains('SMED', case=False, na=False)]['Tiempo (Min)'].mean()
+promedio_smed = df[df['Nivel Evento 4'].str.contains('SMED', case=False, na=False)]['Tiempo (Min)'].mean()
 
 # 4. Promedio Baño
-promedio_baño = df[df['Nivel Evento 3'].str.contains('BAÑO', case=False, na=False)]['Tiempo (Min)'].mean()
+promedio_baño = df[df['Nivel Evento 4'].str.contains('BAÑO', case=False, na=False)]['Tiempo (Min)'].mean()
 
 # 5. Promedio Refrigerio
-promedio_refrigerio = df[df['Nivel Evento 3'].str.contains('REFRIGERIO', case=False, na=False)]['Tiempo (Min)'].mean()
+promedio_refrigerio = df[df['Nivel Evento 4'].str.contains('REFRIGERIO', case=False, na=False)]['Tiempo (Min)'].mean()
 
 # --- MOSTRAR MÉTRICAS ---
 
