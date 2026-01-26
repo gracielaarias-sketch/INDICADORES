@@ -34,25 +34,35 @@ try:
 
     df_raw = load_data(url_csv)
 
-    # 3. FILTROS EN LA BARRA LATERAL
+    # 3. FILTROS EN LA BARRA LATERAL (RESTAURADO EL INTERVALO)
     st.sidebar.header("📅 Filtros de Análisis")
     min_d = df_raw['Fecha_Filtro'].min().date()
     max_d = df_raw['Fecha_Filtro'].max().date()
-    fecha_sel = st.sidebar.date_input("Selecciona el día", min_d, key="cal_prod")
+    
+    # Selector de RANGO de fechas
+    rango = st.sidebar.date_input("Selecciona Intervalo de Tiempo", [min_d, max_d], min_value=min_d, max_value=max_d)
 
     fábricas = st.sidebar.multiselect("Fábrica", df_raw['Fábrica'].unique(), default=df_raw['Fábrica'].unique())
     máquinas = st.sidebar.multiselect("Máquina", df_raw['Máquina'].unique(), default=df_raw['Máquina'].unique())
 
-    # 4. APLICACIÓN DE FILTROS
+    # 4. APLICACIÓN DE FILTROS POR INTERVALO
     df_f = df_raw.copy()
-    df_f = df_f[df_f['Fecha_Filtro'] == pd.to_datetime(fecha_sel)]
+    
+    if isinstance(rango, (list, tuple)) and len(rango) == 2:
+        inicio, fin = pd.to_datetime(rango[0]), pd.to_datetime(rango[1])
+        df_f = df_f[(df_f['Fecha_Filtro'] >= inicio) & (df_f['Fecha_Filtro'] <= fin)]
+    elif len(rango) == 1:
+        st.info("💡 Por favor, selecciona la fecha de fin en el calendario.")
+        st.stop()
+    
     df_f = df_f[df_f['Fábrica'].isin(fábricas) & df_f['Máquina'].isin(máquinas)]
 
     # 5. TÍTULO Y MÉTRICAS
-    st.title(f"🏭 Panel de Control de Producción")
-    st.subheader(f"📊 Reporte del día: {fecha_sel}")
-
-    if not df_f.empty:
+    st.title("🏭 Panel de Control de Producción")
+    
+    if df_f.empty:
+        st.warning("⚠️ No se encontraron registros para este intervalo.")
+    else:
         # Totales
         t_prod = df_f[df_f['Evento'].str.contains('Producción', case=False, na=False)]['Tiempo (Min)'].sum()
         t_fallas = df_f[df_f['Nivel Evento 3'].str.contains('FALLA', case=False, na=False)]['Tiempo (Min)'].sum()
@@ -69,7 +79,7 @@ try:
         c1, c2, c3 = st.columns(3)
         c1.metric("Producción Total", f"{t_prod:,.1f} min")
         c2.metric("Tiempo en Fallas", f"{t_fallas:,.1f} min", delta_color="inverse")
-        c3.metric("Eventos Totales", len(df_f))
+        c3.metric("Eventos Registrados", len(df_f))
 
         # Mostrar Promedios
         p1, p2, p3 = st.columns(3)
@@ -80,8 +90,6 @@ try:
         st.divider()
 
         # 6. SECCIÓN DE GRÁFICOS
-        
-        # Fila 1: Distribución y Operadores
         g1, g2 = st.columns(2)
         with g1:
             st.subheader("⏱️ Distribución de Tiempo")
@@ -114,11 +122,9 @@ try:
 
         # 7. TABLA DE REGISTROS
         with st.expander("📂 Ver registros detallados"):
-            df_display = df_f.sort_values(by='Fecha_DT')
-            cols_v = ['Hora_Txt', 'Operador', 'Evento', 'Máquina', 'Tiempo (Min)', 'Nivel Evento 4', col_6]
+            df_display = df_f.sort_values(by=['Fecha_Filtro', 'Fecha_DT'])
+            cols_v = ['Fecha_Filtro', 'Hora_Txt', 'Operador', 'Evento', 'Máquina', 'Tiempo (Min)', 'Nivel Evento 4', col_6]
             st.dataframe(df_display[[c for c in cols_v if c in df_display.columns]], use_container_width=True)
-    else:
-        st.warning("No hay datos registrados para este día.")
 
 except Exception as e:
     st.error(f"Error crítico: {e}")
