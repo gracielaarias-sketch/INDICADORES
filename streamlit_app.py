@@ -9,7 +9,7 @@ st.set_page_config(page_title="Auditoría Integral de Planta", layout="wide")
 # 🆕 AÑADIR LOGO AL ENCABEZADO
 # ==========================================
 # Reemplaza la URL de abajo por tu enlace "Raw" de GitHub
-url_logo_ejemplo = "https://raw.githubusercontent.com/gracielaarias-sketch/indicadores/main/logofamma.png"
+url_logo_ejemplo = "https://raw.githubusercontent.com/gracielaarias-sketch/indicadores/main/LOGOFAMMA.png"
 
 try:
     st.logo(image=url_logo_ejemplo, icon_image=url_logo_ejemplo)
