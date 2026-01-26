@@ -8,7 +8,7 @@ st.set_page_config(page_title="Auditoría Integral de Planta", layout="wide")
 # ==========================================
 # 🆕 LOGO GRANDE EN BARRA LATERAL + PEQUEÑO ARRIBA
 # ==========================================
-url_logo = "https://github.com/gracielaarias-sketch/INDICADORES/blob/main/LOGOFAMMA.png?raw=true"
+url_logo = "https://raw.githubusercontent.com/gracielaarias-sketch/INDICADORES/refs/heads/main/LOGOFAMMA.png?token=GHSAT0AAAAAADUB4YKJ5G5TPVKNFQIQ5JD62LXPWXA"
 
 # 1. Logo pequeño para la barra de navegación (Barra superior)
 try:
