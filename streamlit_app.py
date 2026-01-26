@@ -67,7 +67,7 @@ promedio_refrigerio = df[df['Nivel Evento 4'].str.contains('REFRIGERIO', case=Fa
 # Primera fila: Totales
 col1, col2 = st.columns(2)
 with col1:
-    st.metric("Total Eventos", f"{total_eventos}")
+   st.metric("Total Tiempo Producción", f"{tiempo_produccion:,.2f} min")
 with col2:
     st.metric("Total Tiempo Fallas", f"{tiempo_fallas:,.2f} min")
 
