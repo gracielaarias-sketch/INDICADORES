@@ -93,6 +93,40 @@ try:
             c4.metric("Calidad", f"{m['CAL']:.1%}")
         st.divider()
 
+    # 5. TÍTULO Y MÉTRICAS
+    st.title("🏭 Panel de Control de Producción")
+    
+    if df_f.empty:
+        st.warning("⚠️ No se encontraron registros para este intervalo.")
+    else:
+        # Totales
+        t_prod = df_f[df_f['Evento'].str.contains('Producción', case=False, na=False)]['Tiempo (Min)'].sum()
+        t_fallas = df_f[df_f['Nivel Evento 3'].str.contains('FALLA', case=False, na=False)]['Tiempo (Min)'].sum()
+        
+        # Promedios específicos en Nivel Evento 4
+        def get_avg_n4(txt):
+            if 'Nivel Evento 4' in df_f.columns:
+                mask = df_f['Nivel Evento 4'].str.contains(txt, case=False, na=False)
+                val = df_f[mask]['Tiempo (Min)'].mean()
+                return 0 if pd.isna(val) else val
+            return 0
+
+        # Mostrar Métricas principales
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Producción Total", f"{t_prod:,.1f} min")
+        c2.metric("Tiempo en Fallas", f"{t_fallas:,.1f} min", delta_color="inverse")
+        c3.metric("Eventos Registrados", len(df_f))
+
+        # Mostrar Promedios
+        p1, p2, p3 = st.columns(3)
+        p1.metric("Promedio SMED", f"{get_avg_n4('SMED'):.2f} min")
+        p2.metric("Promedio Baño", f"{get_avg_n4('BAÑO'):.2f} min")
+        p3.metric("Promedio Refrigerio", f"{get_avg_n4('REFRIGERIO'):.2f} min")
+
+        st.divider()
+
+
+    
     # 6. SECCIÓN DE GRÁFICOS DE REGISTROS
     if not df_f.empty:
         g1, g2 = st.columns(2)
