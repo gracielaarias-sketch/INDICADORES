@@ -1,8 +1,3 @@
-¡Tienes razón! Al reorganizar los gráficos, se nos quedaron fuera esas métricas clave en la parte superior. He reintegrado los promedios específicos (SMED, Baño, Refrigerio) y los totales de producción y fallas, asegurando que todos se calculen dinámicamente sobre el DataFrame filtrado (df_f).
-
-Aquí tienes el código completo y corregido:
-
-Python
 
 import streamlit as st
 import pandas as pd
