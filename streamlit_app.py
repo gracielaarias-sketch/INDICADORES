@@ -6,19 +6,12 @@ import plotly.express as px
 st.set_page_config(page_title="Auditoría Integral de Planta", layout="wide")
 
 # ==========================================
-# 🆕 LOGO GRANDE EN BARRA LATERAL + PEQUEÑO ARRIBA
+# 🆕 LOGO GRANDE EN BARRA LATERAL 
 # ==========================================
 url_logo = "https://raw.githubusercontent.com/gracielaarias-sketch/INDICADORES/refs/heads/main/LOGOFAMMA.png?token=GHSAT0AAAAAADUB4YKJ5G5TPVKNFQIQ5JD62LXPWXA"
-
-# 1. Logo pequeño para la barra de navegación (Barra superior)
-try:
-    st.logo(image=url_logo, icon_image=url_logo)
-except AttributeError:
-    pass # Si la versión es vieja, no hace nada aquí
-
-# 2. LOGO GRANDE en la barra lateral
 # 'use_container_width=True' hace que ocupe todo el ancho de la columna
 st.sidebar.image(url_logo, use_container_width=True)
+
 # ==========================================
 
 # 2. CARGA DE DATOS ROBUSTA DESDE PANDAS
