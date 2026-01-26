@@ -46,15 +46,43 @@ máquina = st.sidebar.multiselect("Máquina", df['Máquina'].unique(), default=d
 df_filtrado = df[(df['Fábrica'].isin(fábrica)) & (df['Máquina'].isin(máquina))]
 
 # --- MÉTRICAS PRINCIPALES ---
+# 1. Total Eventos
+total_eventos = len(df)
+
+# 2. Total Tiempo de Fallas (Suma de minutos)
+# Filtramos donde la columna Nivel Evento 3 contenga la palabra "FALLA"
+tiempo_fallas = df[df['Nivel Evento 3'].str.contains('FALLA', case=False, na=False)]['Tiempo (Min)'].sum()
+
+# 3. Promedio SMED
+promedio_smed = df[df['Nivel Evento 3'].str.contains('SMED', case=False, na=False)]['Tiempo (Min)'].mean()
+
+# 4. Promedio Baño
+promedio_baño = df[df['Nivel Evento 3'].str.contains('BAÑO', case=False, na=False)]['Tiempo (Min)'].mean()
+
+# 5. Promedio Refrigerio
+promedio_refrigerio = df[df['Nivel Evento 3'].str.contains('REFRIGERIO', case=False, na=False)]['Tiempo (Min)'].mean()
+
+# --- MOSTRAR MÉTRICAS ---
+
+# Primera fila: Totales
+col1, col2 = st.columns(2)
+with col1:
+    st.metric("Total Eventos", f"{total_eventos}")
+with col2:
+    st.metric("Total Tiempo Fallas", f"{tiempo_fallas:,.2f} min")
+
+st.markdown("---")
+
+# Segunda fila: Promedios
+st.subheader("⏱️ Promedios de Tiempo")
 m1, m2, m3 = st.columns(3)
-with m1:
-    st.metric("Total Eventos", len(df_filtrado))
-with m2:
-    tiempo_total = df_filtrado['Tiempo (Min)'].sum()
-    st.metric("Tiempo Total (Min)", f"{tiempo_total:,.2f}")
-with m3:
-    produccion_count = len(df_filtrado[df_filtrado['Evento'] == 'Producción'])
-    st.metric("Eventos de Producción", produccion_count)
+
+# Usamos fillna(0) por si no hay registros de ese tipo aún
+m1.metric("Promedio SMED", f"{0 if pd.isna(promedio_smed) else promedio_smed:.2f} min")
+m2.metric("Promedio Baño", f"{0 if pd.isna(promedio_baño) else promedio_baño:.2f} min")
+m3.metric("Promedio Refrigerio", f"{0 if pd.isna(promedio_refrigerio) else promedio_refrigerio:.2f} min")
+
+st.divider()
 
 # --- GRÁFICOS ---
 col1, col2 = st.columns(2)
