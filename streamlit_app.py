@@ -18,17 +18,14 @@ try:
     @st.cache_data(ttl=300)
     def load_pandas_df(url):
         df = pd.read_csv(url)
-        # Limpieza agresiva de Tiempo a Numérico
         if 'Tiempo (Min)' in df.columns:
             df['Tiempo (Min)'] = df['Tiempo (Min)'].astype(str).str.replace(',', '.')
             df['Tiempo (Min)'] = pd.to_numeric(df['Tiempo (Min)'], errors='coerce').fillna(0.0)
         
-        # NORMALIZACIÓN DE FECHA ROBUSTA
         col_fecha = next((c for c in df.columns if c.lower() == 'fecha'), None)
         if col_fecha:
             df['Fecha_DT'] = pd.to_datetime(df[col_fecha], dayfirst=True, errors='coerce')
             df['Fecha_Filtro'] = df['Fecha_DT'].dt.normalize()
-        
         return df
 
     df_raw = load_pandas_df(url_csv_datos)
@@ -46,7 +43,6 @@ try:
     
     opciones_fabrica = sorted(df_raw['Fábrica'].unique())
     fábricas = st.sidebar.multiselect("Fábrica", opciones_fabrica, default=opciones_fabrica)
-
     opciones_maquina = sorted(df_raw[df_raw['Fábrica'].isin(fábricas)]['Máquina'].unique())
     máquinas = st.sidebar.multiselect("Máquina", opciones_maquina, default=opciones_maquina)
 
@@ -59,73 +55,73 @@ try:
     else:
         st.stop()
 
-    # 5. VISUALIZACIÓN OEE
-    st.title("🏭 Auditoría de Planta: OEE & Producción")
+    # 5. VISUALIZACIÓN OEE CON DESPLEGABLES
+    st.title("🏭 Auditoría de Planta: OEE Detallado")
     
     if not df_oee_f.empty:
-        def get_area_metrics(area_name):
-            mask = df_oee_f.apply(lambda row: row.astype(str).str.upper().str.contains(area_name.upper()).any(), axis=1)
+        def get_metrics(name_filter):
+            mask = df_oee_f.apply(lambda row: row.astype(str).str.upper().str.contains(name_filter.upper()).any(), axis=1)
             datos = df_oee_f[mask]
-            metrics = {'OEE': 0.0, 'DISP': 0.0, 'PERF': 0.0, 'CAL': 0.0}
-            
+            m = {'OEE': 0.0, 'DISP': 0.0, 'PERF': 0.0, 'CAL': 0.0}
             if not datos.empty:
                 cols_map = {'OEE': 'OEE', 'DISP': 'Disponibilidad', 'PERF': 'Performance', 'CAL': 'Calidad'}
-                for key, col_busq in cols_map.items():
-                    actual_col = next((c for c in datos.columns if col_busq.lower() in c.lower()), None)
+                for key, col_search in cols_map.items():
+                    actual_col = next((c for c in datos.columns if col_search.lower() in c.lower()), None)
                     if actual_col:
-                        val_str = str(datos[actual_col].iloc[0]).replace('%', '').replace(',', '.')
-                        val_num = pd.to_numeric(val_str, errors='coerce')
-                        # Si es mayor a 1, asumimos que viene como 85.5 y no 0.855
-                        metrics[key] = float(val_num / 100 if val_num > 1.0 else val_num)
-            return metrics
+                        val = str(datos[actual_col].iloc[0]).replace('%', '').replace(',', '.')
+                        val_num = pd.to_numeric(val, errors='coerce')
+                        m[key] = float(val_num / 100 if val_num > 1.0 else val_num)
+            return m
 
-        areas = [('GENERAL', 'Planta Total'), ('SOLDADURA', 'Área Soldadura'), ('ESTAMPADO', 'Área Estampado')]
-        for area_key, area_label in areas:
-            st.markdown(f"### 🎯 Indicadores OEE: {area_label}")
-            m = get_area_metrics(area_key)
+        def show_metric_row(m):
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("OEE", f"{m['OEE']:.1%}")
             c2.metric("Disponibilidad", f"{m['DISP']:.1%}")
             c3.metric("Performance", f"{m['PERF']:.1%}")
             c4.metric("Calidad", f"{m['CAL']:.1%}")
+
+        # SECCIÓN PLANTA GENERAL
+        st.subheader("🏢 Planta Total")
+        show_metric_row(get_metrics('GENERAL'))
         st.divider()
 
-    # 6. MÉTRICAS OPERATIVAS
+        # SECCIÓN ESTAMPADO
+        st.subheader("🚜 Área Estampado")
+        show_metric_row(get_metrics('ESTAMPADO'))
+        with st.expander("Ver detalle por Líneas (L1, L2, L3, L4)"):
+            for linea in ['L1', 'L2', 'L3', 'L4']:
+                st.markdown(f"**Línea {linea}**")
+                show_metric_row(get_metrics(linea))
+        st.divider()
+
+        # SECCIÓN SOLDADURA
+        st.subheader("👨‍🏭 Área Soldadura")
+        show_metric_row(get_metrics('SOLDADURA'))
+        with st.expander("Ver detalle Soldadura (Celda, PRP)"):
+            for sub in ['CELDA', 'PRP']:
+                st.markdown(f"**Proceso {sub}**")
+                show_metric_row(get_metrics(sub))
+        st.divider()
+
+    # 6. MÉTRICAS OPERATIVAS (REGISTROS)
     if not df_f.empty:
         t_prod = float(df_f[df_f['Evento'].astype(str).str.contains('Producción', case=False, na=False)]['Tiempo (Min)'].sum())
         t_fallas = float(df_f[df_f['Nivel Evento 3'].astype(str).str.contains('FALLA', case=False, na=False)]['Tiempo (Min)'].sum())
         
-        def get_avg_n4(txt):
-            col_n4 = next((c for c in df_f.columns if 'Nivel Evento 4' in c), None)
-            if col_n4:
-                mask = df_f[col_n4].astype(str).str.contains(txt, case=False, na=False)
-                val = df_f[mask]['Tiempo (Min)'].mean()
-                return float(val) if pd.notna(val) else 0.0
-            return 0.0
-
-        st.subheader("🚀 Totales de Producción")
+        st.subheader("🚀 Resumen de Tiempos Registrados")
         m1, m2, m3 = st.columns(3)
-        m1.metric("Producción Total", f"{t_prod:,.1f} min")
+        m1.metric("Producción Real", f"{t_prod:,.1f} min")
         m2.metric("Tiempo en Fallas", f"{t_fallas:,.1f} min")
-        m3.metric("Eventos", len(df_f))
-
-        st.subheader("⏱️ Promedios (Nivel 4)")
-        p1, p2, p3 = st.columns(3)
-        p1.metric("Promedio SMED", f"{get_avg_n4('SMED'):.2f} min")
-        p2.metric("Promedio Baño", f"{get_avg_n4('BAÑO'):.2f} min")
-        p3.metric("Promedio Refrigerio", f"{get_avg_n4('REFRIGERIO'):.2f} min")
-        st.divider()
+        m3.metric("Eventos del Periodo", len(df_f))
 
         # 7. GRÁFICOS
         g1, g2 = st.columns(2)
         with g1:
             st.plotly_chart(px.pie(df_f, values='Tiempo (Min)', names='Evento', title="Distribución de Tiempo", hole=0.4), use_container_width=True)
         with g2:
-            st.plotly_chart(px.bar(df_f, x='Operador', y='Tiempo (Min)', color='Evento', title="Tiempos por Operador", barmode='group'), use_container_width=True)
+            st.plotly_chart(px.bar(df_f, x='Operador', y='Tiempo (Min)', color='Evento', title="Rendimiento por Operador", barmode='group'), use_container_width=True)
 
         st.divider()
-
-        # TOP 15 FALLAS
         col_6 = 'Nivel Evento 6' if 'Nivel Evento 6' in df_f.columns else df_f.columns[5]
         df_f6 = df_f[df_f['Nivel Evento 3'].astype(str).str.contains('FALLA', case=False, na=False)]
         if not df_f6.empty:
@@ -134,8 +130,6 @@ try:
             st.plotly_chart(px.bar(top15, x='Tiempo (Min)', y=col_6, orientation='h', color='Tiempo (Min)', color_continuous_scale='Reds'), use_container_width=True)
 
         st.divider()
-
-        # MAPA DE CALOR
         st.subheader("🔥 Mapa de Calor: Máquinas vs Causa")
         df_hm = df_f[df_f['Evento'].astype(str).str.contains('Parada|Falla', case=False, na=False)]
         if not df_hm.empty:
