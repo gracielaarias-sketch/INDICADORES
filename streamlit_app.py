@@ -114,6 +114,39 @@ def get_metrics(name_filter):
                 m[key] = float(val_num / 100 if val_num > 1.0 else val_num)
     return m
 
+# 2. AQUI AGREGAMOS EL DESPLEGABLE CON EL GRÁFICO
+with st.expander("📉 Ver Evolución Histórica del OEE (Click aquí)"):
+    if not df_oee_f.empty:
+        # Preparamos datos para el gráfico
+        df_trend = df_oee_f.copy()
+        
+        # Limpieza (por si viene como string con %)
+        if df_trend['OEE'].dtype == 'object':
+            df_trend['OEE_Num'] = df_trend['OEE'].astype(str).str.replace('%','').str.replace(',','.').astype(float)
+        else:
+            df_trend['OEE_Num'] = df_trend['OEE']
+        
+        # Agrupamos por fecha
+        trend_data = df_trend.groupby('Fecha_Filtro')['OEE_Num'].mean().reset_index()
+        
+        # Creamos el gráfico
+        fig_trend = px.line(
+            trend_data, 
+            x='Fecha_Filtro', 
+            y='OEE_Num', 
+            markers=True,
+            title='Tendencia Diaria del OEE',
+            labels={'OEE_Num': 'OEE %', 'Fecha_Filtro': 'Fecha'}
+        )
+        # Línea de referencia (Meta)
+        fig_trend.add_hline(y=85, line_dash="dot", annotation_text="Meta (85%)", line_color="green")
+        
+        st.plotly_chart(fig_trend, use_container_width=True)
+    else:
+        st.warning("No hay datos suficientes para mostrar la gráfica.")
+
+st.divider()
+
 def show_metric_row(m):
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("OEE", f"{m['OEE']:.1%}")
