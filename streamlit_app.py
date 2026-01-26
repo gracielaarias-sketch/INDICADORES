@@ -97,15 +97,35 @@ try:
             fig_operador = px.bar(df_filtrado, x='Operador', y='Tiempo (Min)', color='Evento', title="Rendimiento por Operador")
             st.plotly_chart(fig_operador, use_container_width=True)
 
-        # 7. TOP 15 FALLAS
-        st.subheader("⚠️ Top 15 Principales Fallas")
-        df_solo_fallas = df_filtrado[df_filtrado['Nivel Evento 3'].str.contains('FALLA', case=False, na=False)]
-        if not df_solo_fallas.empty:
-            top_15 = df_solo_fallas.groupby('Nivel Evento 3')['Tiempo (Min)'].sum().nlargest(15).reset_index()
-            fig_top = px.bar(top_15, x='Tiempo (Min)', y='Nivel Evento 3', orientation='h', 
-                             color='Tiempo (Min)', color_continuous_scale='Reds')
-            fig_top.update_layout(yaxis={'categoryorder':'total ascending'})
-            st.plotly_chart(fig_top, use_container_width=True)
+Aquí tienes exclusivamente el fragmento de código correspondiente a la sección de Gráficos e Indicadores Visuales, incluyendo el Mapa de Calor, la Distribución por Evento, el Rendimiento por Operador y el Top 15 de Fallas basado en el Nivel Evento 6.
+
+Python
+
+# --- SECCIÓN DE VISUALIZACIONES ---
+st.divider()
+
+# 1. MAPA DE CALOR (Máquina vs Nivel Evento 6)
+st.subheader("🔥 Mapa de Calor: Máquinas vs Causa Raíz (Nivel 6)")
+df_heatmap = df_filtrado[df_filtrado['Evento'].str.contains('Parada|Falla', case=False, na=False)]
+
+if 'Nivel Evento 6' in df_heatmap.columns and not df_heatmap.empty:
+    # Agrupamos por Máquina y el detalle del Nivel 6
+    pivot_hm = df_heatmap.groupby(['Máquina', 'Nivel Evento 6'])['Tiempo (Min)'].sum().reset_index()
+    
+    fig_hm = px.density_heatmap(
+        pivot_hm, 
+        x='Nivel Evento 6', 
+        y="Máquina", 
+        z="Tiempo (Min)",
+        color_continuous_scale="Viridis",
+        text_auto=True,
+        labels={'Nivel Evento 6': 'Causa Específica', 'Tiempo (Min)': 'Minutos Totales'}
+    )
+    st.plotly_chart(fig_hm, use_container_width=True)
+else:
+    st.info("No hay datos suficientes en 'Nivel Evento 6' para generar el Mapa de Calor.")
+
+st.divider()
 
         # 8. TABLA
         with st.expander("📂 Ver registros completos"):
