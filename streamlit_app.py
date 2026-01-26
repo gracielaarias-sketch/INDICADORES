@@ -1,3 +1,9 @@
+Entendido. He reorganizado tu código original para que la estructura se mantenga idéntica, pero moviendo la lógica y la visualización del Mapa de Calor al final de la sección de gráficos.
+
+Aquí tienes el código con el orden corregido:
+
+Python
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -56,7 +62,6 @@ try:
         tiempo_fallas = df_f[df_f['Nivel Evento 3'].str.contains('FALLA', case=False, na=False)]['Tiempo (Min)'].sum()
         
         def calc_prom(filtro):
-            # Buscamos en todas las columnas el término (SMED, Baño, etc)
             mask = df_f.apply(lambda row: row.astype(str).str.contains(filtro, case=False).any(), axis=1)
             val = df_f[mask]['Tiempo (Min)'].mean()
             return 0 if pd.isna(val) else val
@@ -93,26 +98,12 @@ try:
 
         st.divider()
 
-        # Identificamos la columna para detalle (Nivel 6) y filtramos para paradas
+        # TOP 15 FALLAS
         col_6 = 'Nivel Evento 6' if 'Nivel Evento 6' in df_f.columns else df_f.columns[5]
-        df_hm = df_f[df_f['Evento'].str.contains('Parada|Falla', case=False, na=False)]
-
-        # --- MAPA DE CALOR ---
-        st.subheader(f"🔥 Mapa de Calor: Máquina vs Causa Raíz ({col_6})")
-        if not df_hm.empty:
-            pivot_hm = df_hm.groupby(['Máquina', col_6])['Tiempo (Min)'].sum().reset_index()
-            fig_hm = px.density_heatmap(pivot_hm, x=col_6, y="Máquina", z="Tiempo (Min)",
-                                        color_continuous_scale="Viridis", text_auto=True)
-            st.plotly_chart(fig_hm, use_container_width=True)
-        else:
-            st.info("No hay eventos de parada para mostrar el Mapa de Calor.")
-
-        # --- TOP 15 FALLAS ---
-        st.divider()
-        st.subheader(f"⚠️ Top 15 Fallas Detalladas ({col_6})")
         df_f6 = df_f[df_f['Nivel Evento 3'].str.contains('FALLA', case=False, na=False)]
         
         if not df_f6.empty:
+            st.subheader(f"⚠️ Top 15 Fallas Detalladas ({col_6})")
             top15 = df_f6.groupby(col_6)['Tiempo (Min)'].sum().nlargest(15).reset_index()
             fig_f = px.bar(top15, x='Tiempo (Min)', y=col_6, orientation='h', 
                            color='Tiempo (Min)', color_continuous_scale='Reds')
@@ -120,6 +111,20 @@ try:
             st.plotly_chart(fig_f, use_container_width=True)
         else:
             st.info("No se detectaron fallas con detalle de Nivel 6.")
+
+        st.divider()
+
+        # --- MAPA DE CALOR (AL FINAL) ---
+        st.subheader(f"🔥 Mapa de Calor: Máquina vs Causa Raíz ({col_6})")
+        df_hm = df_f[df_f['Evento'].str.contains('Parada|Falla', case=False, na=False)]
+        
+        if not df_hm.empty:
+            pivot_hm = df_hm.groupby(['Máquina', col_6])['Tiempo (Min)'].sum().reset_index()
+            fig_hm = px.density_heatmap(pivot_hm, x=col_6, y="Máquina", z="Tiempo (Min)",
+                                        color_continuous_scale="Viridis", text_auto=True)
+            st.plotly_chart(fig_hm, use_container_width=True)
+        else:
+            st.info("No hay eventos de parada para mostrar el Mapa de Calor.")
 
         with st.expander("📂 Ver registros detallados"):
             st.dataframe(df_f)
