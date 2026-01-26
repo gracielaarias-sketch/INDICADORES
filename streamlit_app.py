@@ -5,7 +5,7 @@ import plotly.express as px
 # ==========================================
 # 1. CONFIGURACIÓN Y ESTILOS
 # ==========================================
-st.set_page_config(page_title="Auditoría Integral de Planta", layout="wide", page_icon="🏭")
+st.set_page_config(page_title="Indicadores FAMMA", layout="wide", page_icon="🏭")
 
 # ==========================================
 # 2. LOGO BARRA LATERAL
@@ -67,7 +67,7 @@ df_raw, df_oee_raw = load_data()
 if df_raw.empty:
     st.stop()
 
-st.sidebar.header("📅 Rango de Auditoría")
+st.sidebar.header("📅 Rango de tiempo")
 min_d = df_raw['Fecha_Filtro'].min().date() if not df_raw.empty else None
 max_d = df_raw['Fecha_Filtro'].max().date() if not df_raw.empty else None
 
@@ -173,11 +173,11 @@ if not df_f.empty:
     
     if not df_f6.empty:
         st.divider()
-        st.subheader(f"⚠️ Top 15 Fallas Detalladas ({col_6})")
+        st.subheader(f"Top 15 Fallas Detalladas ({col_6})")
         top15 = df_f6.groupby(col_6)['Tiempo (Min)'].sum().nlargest(15).reset_index()
         st.plotly_chart(px.bar(top15, x='Tiempo (Min)', y=col_6, orientation='h', color='Tiempo (Min)', color_continuous_scale='Reds'), use_container_width=True)
 
-        st.subheader("🔥 Mapa de Calor: Máquinas vs Causa")
+        st.subheader("Mapa de Calor: Máquinas vs Causa")
         pivot_hm = df_f6.groupby(['Máquina', col_6])['Tiempo (Min)'].sum().reset_index()
         st.plotly_chart(px.density_heatmap(pivot_hm, x=col_6, y="Máquina", z="Tiempo (Min)", color_continuous_scale="Viridis", text_auto=True), use_container_width=True)
 
