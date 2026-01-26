@@ -56,7 +56,7 @@ try:
         st.stop()
 
     # 5. VISUALIZACIÓN OEE CON DESPLEGABLES
-    st.title("🏭 Auditoría de Planta: OEE Detallado")
+    st.title("🏭 OEE Detallado")
     
     if not df_oee_f.empty:
         def get_metrics(name_filter):
@@ -86,7 +86,7 @@ try:
         st.divider()
 
         # SECCIÓN ESTAMPADO
-        st.subheader("🚜 Área Estampado")
+        st.subheader("Estampado")
         show_metric_row(get_metrics('ESTAMPADO'))
         with st.expander("Ver detalle por Líneas (L1, L2, L3, L4)"):
             for linea in ['L1', 'L2', 'L3', 'L4']:
@@ -95,7 +95,7 @@ try:
         st.divider()
 
         # SECCIÓN SOLDADURA
-        st.subheader("👨‍🏭 Área Soldadura")
+        st.subheader("Soldadura")
         show_metric_row(get_metrics('SOLDADURA'))
         with st.expander("Ver detalle Soldadura (Celda, PRP)"):
             for sub in ['CELDA', 'PRP']:
@@ -108,7 +108,7 @@ try:
         t_prod = float(df_f[df_f['Evento'].astype(str).str.contains('Producción', case=False, na=False)]['Tiempo (Min)'].sum())
         t_fallas = float(df_f[df_f['Nivel Evento 3'].astype(str).str.contains('FALLA', case=False, na=False)]['Tiempo (Min)'].sum())
         
-        st.subheader("🚀 Resumen de Tiempos Registrados")
+        st.subheader("Resumen de Tiempos Registrados")
         m1, m2, m3 = st.columns(3)
         m1.metric("Producción Real", f"{t_prod:,.1f} min")
         m2.metric("Tiempo en Fallas", f"{t_fallas:,.1f} min")
