@@ -83,12 +83,6 @@ try:
 
         # 6. SECCIÓN DE GRÁFICOS
              
-        if not df_hm.empty:
-            pivot_hm = df_hm.groupby(['Máquina', col_6])['Tiempo (Min)'].sum().reset_index()
-            fig_hm = px.density_heatmap(pivot_hm, x=col_6, y="Máquina", z="Tiempo (Min)",
-                                        color_continuous_scale="Viridis", text_auto=True)
-            st.plotly_chart(fig_hm, use_container_width=True)
-
         # DISTRIBUCIÓN Y OPERADORES
         c_left, c_right = st.columns(2)
         with c_left:
@@ -109,6 +103,12 @@ try:
             st.plotly_chart(fig_f, use_container_width=True)
             
        # MAPA DE CALOR
+                if not df_hm.empty:
+            pivot_hm = df_hm.groupby(['Máquina', col_6])['Tiempo (Min)'].sum().reset_index()
+            fig_hm = px.density_heatmap(pivot_hm, x=col_6, y="Máquina", z="Tiempo (Min)",
+                                        color_continuous_scale="Viridis", text_auto=True)
+            st.plotly_chart(fig_hm, use_container_width=True)
+
         st.subheader("🔥 Mapa de Calor: Máquina vs Causa Raíz (Nivel 6)")
         df_hm = df_f[df_f['Evento'].str.contains('Parada|Falla', case=False, na=False)]
         col_6 = 'Nivel Evento 6' if 'Nivel Evento 6' in df_f.columns else df_f.columns[5]
