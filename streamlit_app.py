@@ -1,9 +1,3 @@
-Aquí tienes el código definitivo. He eliminado los selectores manuales de hora y el slider de la barra lateral para que el sistema trabaje por ti: ahora detecta automáticamente la hora exacta del primer y último registro basándose en tus filtros de fecha, fábrica o máquina.
-
-Se mantiene la carga robusta con Pandas, la normalización de fechas y el orden jerárquico de los gráficos.
-
-Python
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -125,11 +119,3 @@ try:
 
 except Exception as e:
     st.error(f"Error crítico: {e}")
-¿Por qué este diseño es superior para tu necesidad?
-Auditoría Real: Al calcular el mínimo y máximo de la columna Fecha_DT, el sistema te muestra el horario real de trabajo, no el horario teórico. Si alguien empezó a registrar tarde, lo verás reflejado en la métrica "Hora Primer Registro".
-
-Filtro por Máquina: Si seleccionas una sola máquina en la barra lateral, los cuadros de Inicio y Cierre te dirán exactamente a qué hora empezó y terminó esa máquina específica.
-
-Tabla Cronológica: He añadido un sort_values en la tabla detallada para que puedas leer los eventos en orden, como si fuera una línea de tiempo del día.
-
-Robustez de Fechas: Se mantiene el uso de normalize() para asegurar que el día seleccionado en el calendario siempre encuentre los datos en el DataFrame, sin importar el formato interno del archivo.
