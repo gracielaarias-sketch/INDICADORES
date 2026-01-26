@@ -11,7 +11,7 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 url_directa = st.secrets["connections"]["gsheets"]["spreadsheet"].strip()
 
 # Leer los datos usando la URL limpia
-df = conn.read(spreadsheet=url_directa, worksheet="DATOS")
+df = conn.read(spreadsheet=url_directa, ttl="5m", gid=0)
 
 st.write("¡Datos cargados correctamente!")
 st.dataframe(df.head())
