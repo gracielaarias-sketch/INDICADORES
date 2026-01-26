@@ -97,11 +97,6 @@ try:
             fig_operador = px.bar(df_filtrado, x='Operador', y='Tiempo (Min)', color='Evento', title="Rendimiento por Operador")
             st.plotly_chart(fig_operador, use_container_width=True)
 
-Aquí tienes exclusivamente el fragmento de código correspondiente a la sección de Gráficos e Indicadores Visuales, incluyendo el Mapa de Calor, la Distribución por Evento, el Rendimiento por Operador y el Top 15 de Fallas basado en el Nivel Evento 6.
-
-Python
-
-# --- SECCIÓN DE VISUALIZACIONES ---
 st.divider()
 
 # 1. MAPA DE CALOR (Máquina vs Nivel Evento 6)
