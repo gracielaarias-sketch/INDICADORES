@@ -20,10 +20,6 @@ st.dataframe(df.head())
 st.set_page_config(page_title="Dashboard de Producción", layout="wide")
 st.title("🏭 Control de Eventos de Planta")
 
-# Conectar a tu Google Sheet
-conn = st.connection("gsheets", type=GSheetsConnection)
-df = conn.read(worksheet="Hoja 1")
-
 # Limpieza de datos (basado en tu estructura)
 df = df.dropna(subset=['Operador', 'Evento'])
 # Convertimos el tiempo a numérico por si acaso
