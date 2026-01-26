@@ -90,7 +90,12 @@ else:
 # ==========================================
 # 5. OEE SECTION
 # ==========================================
-st.title("🏭 OEE Detallado")
+st.title("🏭 INDICADORES FAMMA")
+
+# ==========================================
+# 5. OEE SECTION
+# ==========================================
+st.title("OEE Detallado")
 
 def get_metrics(name_filter):
     if df_oee_f.empty: return {'OEE': 0, 'DISP': 0, 'PERF': 0, 'CAL': 0}
