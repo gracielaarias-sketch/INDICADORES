@@ -11,7 +11,7 @@ try:
     
     # GIDs de las pestañas
     gid_datos = "0"
-    gid_oee = "1767654796" # <-- Verifica que este sea el GID de tu pestaña OEE
+    gid_oee = "1767654796" # GID de pestaña OEE
     
     url_csv_datos = url_base.split("/edit")[0] + f"/export?format=csv&gid={gid_datos}"
     url_csv_oee = url_base.split("/edit")[0] + f"/export?format=csv&gid={gid_oee}"
@@ -28,7 +28,6 @@ try:
         # Limpieza de valores porcentuales y comas para todas las columnas numéricas
         for col in df.columns:
             if df[col].dtype == 'object':
-                # Reemplazamos % y cambiamos coma por punto para que Pandas lo entienda como número
                 df[col] = df[col].astype(str).str.replace('%', '').str.replace(',', '.')
         return df
 
@@ -42,7 +41,6 @@ try:
     rango = st.sidebar.date_input("Periodo", [min_d, max_d], key="audit_range")
 
     st.sidebar.header("⚙️ Filtros de Planta")
-    # Limpiamos nans para los filtros
     df_raw['Fábrica'] = df_raw['Fábrica'].fillna('Sin Especificar')
     df_raw['Máquina'] = df_raw['Máquina'].fillna('Sin Especificar')
     
@@ -62,29 +60,27 @@ try:
         st.stop()
 
     # 5. VISUALIZACIÓN DE VALORES OEE DETALLADOS
-    st.title("🏭 Auditoría de Planta: OEE & Disponibilidad")
+    st.title("🏭 Auditoría de Planta: OEE & Producción")
     
     if not df_oee_f.empty:
-        # Función para extraer métricas por área
         def get_area_metrics(area_name):
             mask = df_oee_f.apply(lambda row: row.astype(str).str.upper().str.contains(area_name.upper()).any(), axis=1)
             datos = df_oee_f[mask]
             metrics = {'OEE': 0, 'DISP': 0, 'PERF': 0, 'CAL': 0}
             
             if not datos.empty:
-                for key, col in zip(['OEE', 'DISP', 'PERF', 'CAL'], ['OEE', 'Disponibilidad', 'Performance', 'Calidad']):
-                    # Buscamos la columna que contenga el nombre (flexibilidad por si cambia el nombre en Excel)
-                    actual_col = next((c for c in datos.columns if col.lower() in c.lower()), None)
+                cols_map = {'OEE': 'OEE', 'DISP': 'Disponibilidad', 'PERF': 'Performance', 'CAL': 'Calidad'}
+                for key, col_busq in cols_map.items():
+                    actual_col = next((c for c in datos.columns if col_busq.lower() in c.lower()), None)
                     if actual_col:
                         val = pd.to_numeric(datos[actual_col], errors='coerce').mean()
                         metrics[key] = val / 100 if val > 1 else val
             return metrics
 
-        # Presentación por Áreas
         areas = [('GENERAL', 'Planta Total'), ('SOLDADURA', 'Área Soldadura'), ('ESTAMPADO', 'Área Estampado')]
         
         for area_key, area_label in areas:
-            st.markdown(f"### 🎯 Indicadores: {area_label}")
+            st.markdown(f"### 🎯 Indicadores OEE: {area_label}")
             m = get_area_metrics(area_key)
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("OEE", f"{m['OEE']:.1%}")
@@ -93,17 +89,13 @@ try:
             c4.metric("Calidad", f"{m['CAL']:.1%}")
         st.divider()
 
-    # 5. TÍTULO Y MÉTRICAS
-    st.title("🏭 Panel de Control de Producción")
-    
+    # 6. MÉTRICAS OPERATIVAS
     if df_f.empty:
-        st.warning("⚠️ No se encontraron registros para este intervalo.")
+        st.warning("⚠️ No se encontraron registros de eventos para este intervalo.")
     else:
-        # Totales
         t_prod = df_f[df_f['Evento'].str.contains('Producción', case=False, na=False)]['Tiempo (Min)'].sum()
         t_fallas = df_f[df_f['Nivel Evento 3'].str.contains('FALLA', case=False, na=False)]['Tiempo (Min)'].sum()
         
-        # Promedios específicos en Nivel Evento 4
         def get_avg_n4(txt):
             if 'Nivel Evento 4' in df_f.columns:
                 mask = df_f['Nivel Evento 4'].str.contains(txt, case=False, na=False)
@@ -111,24 +103,20 @@ try:
                 return 0 if pd.isna(val) else val
             return 0
 
-        # Mostrar Métricas principales
+        st.subheader("🚀 Totales de Producción")
         c1, c2, c3 = st.columns(3)
         c1.metric("Producción Total", f"{t_prod:,.1f} min")
         c2.metric("Tiempo en Fallas", f"{t_fallas:,.1f} min", delta_color="inverse")
         c3.metric("Eventos Registrados", len(df_f))
 
-        # Mostrar Promedios
+        st.subheader("⏱️ Promedios (Nivel 4)")
         p1, p2, p3 = st.columns(3)
         p1.metric("Promedio SMED", f"{get_avg_n4('SMED'):.2f} min")
         p2.metric("Promedio Baño", f"{get_avg_n4('BAÑO'):.2f} min")
         p3.metric("Promedio Refrigerio", f"{get_avg_n4('REFRIGERIO'):.2f} min")
-
         st.divider()
 
-
-    
-    # 6. SECCIÓN DE GRÁFICOS DE REGISTROS
-    if not df_f.empty:
+        # 7. SECCIÓN DE GRÁFICOS
         g1, g2 = st.columns(2)
         with g1:
             df_f['Tiempo (Min)'] = pd.to_numeric(df_f['Tiempo (Min)'], errors='coerce').fillna(0)
