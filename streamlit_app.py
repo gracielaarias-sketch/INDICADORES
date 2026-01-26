@@ -35,10 +35,10 @@ try:
     df_raw = load_data(url_csv)
 
     # 3. FILTROS EN LA BARRA LATERAL
-    st.sidebar.header("📅 Filtros de Auditoría")
+    st.sidebar.header("📅 Filtros de Análisis")
     min_d = df_raw['Fecha_Filtro'].min().date()
     max_d = df_raw['Fecha_Filtro'].max().date()
-    fecha_sel = st.sidebar.date_input("Selecciona el día", min_d, key="cal_audit")
+    fecha_sel = st.sidebar.date_input("Selecciona el día", min_d, key="cal_prod")
 
     fábricas = st.sidebar.multiselect("Fábrica", df_raw['Fábrica'].unique(), default=df_raw['Fábrica'].unique())
     máquinas = st.sidebar.multiselect("Máquina", df_raw['Máquina'].unique(), default=df_raw['Máquina'].unique())
@@ -48,52 +48,51 @@ try:
     df_f = df_f[df_f['Fecha_Filtro'] == pd.to_datetime(fecha_sel)]
     df_f = df_f[df_f['Fábrica'].isin(fábricas) & df_f['Máquina'].isin(máquinas)]
 
-    # 5. TÍTULO Y CÁLCULOS
-    st.title(f"🏭 Auditoría de Actividad")
-    st.subheader(f"📅 Fecha: {fecha_sel}")
+    # 5. TÍTULO Y MÉTRICAS
+    st.title(f"🏭 Panel de Control de Producción")
+    st.subheader(f"📊 Reporte del día: {fecha_sel}")
 
     if not df_f.empty:
-        # Horarios reales
-        h_primera = df_f['Fecha_DT'].min().strftime('%H:%M')
-        h_ultima = df_f['Fecha_DT'].max().strftime('%H:%M')
-        st.info(f"🕒 **Actividad Detectada:** Primer registro a las **{h_primera}** | Último registro a las **{h_ultima}**")
-
-        # Métricas de Totales
+        # Totales
         t_prod = df_f[df_f['Evento'].str.contains('Producción', case=False, na=False)]['Tiempo (Min)'].sum()
         t_fallas = df_f[df_f['Nivel Evento 3'].str.contains('FALLA', case=False, na=False)]['Tiempo (Min)'].sum()
         
-        # --- CÁLCULO DE PROMEDIOS (BÚSQUEDA EN NIVEL EVENTO 4) ---
+        # Promedios específicos en Nivel Evento 4
         def get_avg_n4(txt):
             if 'Nivel Evento 4' in df_f.columns:
-                # Buscamos específicamente en la columna Nivel Evento 4
                 mask = df_f['Nivel Evento 4'].str.contains(txt, case=False, na=False)
                 val = df_f[mask]['Tiempo (Min)'].mean()
                 return 0 if pd.isna(val) else val
             return 0
 
-        st.subheader("🚀 Totales y Promedios")
+        # Mostrar Métricas principales
         c1, c2, c3 = st.columns(3)
         c1.metric("Producción Total", f"{t_prod:,.1f} min")
-        c2.metric("Tiempo Fallas", f"{t_fallas:,.1f} min", delta_color="inverse")
-        c3.metric("Promedio SMED", f"{get_avg_n4('SMED'):.2f} min")
+        c2.metric("Tiempo en Fallas", f"{t_fallas:,.1f} min", delta_color="inverse")
+        c3.metric("Eventos Totales", len(df_f))
 
+        # Mostrar Promedios
         p1, p2, p3 = st.columns(3)
-        p1.metric("Promedio Baño", f"{get_avg_n4('BAÑO'):.2f} min")
-        p2.metric("Promedio Refrigerio", f"{get_avg_n4('REFRIGERIO'):.2f} min")
-        p3.metric("Eventos Totales", len(df_f))
+        p1.metric("Promedio SMED", f"{get_avg_n4('SMED'):.2f} min")
+        p2.metric("Promedio Baño", f"{get_avg_n4('BAÑO'):.2f} min")
+        p3.metric("Promedio Refrigerio", f"{get_avg_n4('REFRIGERIO'):.2f} min")
 
         st.divider()
 
         # 6. SECCIÓN DE GRÁFICOS
+        
+        # Fila 1: Distribución y Operadores
         g1, g2 = st.columns(2)
         with g1:
-            st.plotly_chart(px.pie(df_f, values='Tiempo (Min)', names='Evento', title="Distribución de Tiempos", hole=0.4), use_container_width=True)
+            st.subheader("⏱️ Distribución de Tiempo")
+            st.plotly_chart(px.pie(df_f, values='Tiempo (Min)', names='Evento', hole=0.4), use_container_width=True)
         with g2:
-            st.plotly_chart(px.bar(df_f, x='Operador', y='Tiempo (Min)', color='Evento', title="Tiempos por Operador", barmode='group'), use_container_width=True)
+            st.subheader("👤 Rendimiento por Operador")
+            st.plotly_chart(px.bar(df_f, x='Operador', y='Tiempo (Min)', color='Evento', barmode='group'), use_container_width=True)
 
         st.divider()
 
-        # TOP 15 FALLAS
+        # Fila 2: Top 15 Fallas
         col_6 = 'Nivel Evento 6' if 'Nivel Evento 6' in df_f.columns else df_f.columns[5]
         df_f6 = df_f[df_f['Nivel Evento 3'].str.contains('FALLA', case=False, na=False)]
         if not df_f6.empty:
@@ -105,7 +104,7 @@ try:
 
         st.divider()
 
-        # --- MAPA DE CALOR (AL FINAL) ---
+        # Fila 3: Mapa de Calor (Al final)
         st.subheader("🔥 Mapa de Calor: Máquinas vs Causa")
         df_hm = df_f[df_f['Evento'].str.contains('Parada|Falla', case=False, na=False)]
         if not df_hm.empty:
@@ -113,12 +112,13 @@ try:
             fig_hm = px.density_heatmap(pivot_hm, x=col_6, y="Máquina", z="Tiempo (Min)", color_continuous_scale="Viridis", text_auto=True)
             st.plotly_chart(fig_hm, use_container_width=True)
 
+        # 7. TABLA DE REGISTROS
         with st.expander("📂 Ver registros detallados"):
             df_display = df_f.sort_values(by='Fecha_DT')
             cols_v = ['Hora_Txt', 'Operador', 'Evento', 'Máquina', 'Tiempo (Min)', 'Nivel Evento 4', col_6]
             st.dataframe(df_display[[c for c in cols_v if c in df_display.columns]], use_container_width=True)
     else:
-        st.warning("⚠️ No hay actividad registrada para este día.")
+        st.warning("No hay datos registrados para este día.")
 
 except Exception as e:
     st.error(f"Error crítico: {e}")
