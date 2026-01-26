@@ -2,7 +2,9 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-# 1. CONFIGURACIÓN DE LA PÁGINA
+# ==========================================
+# 🆕 CONFIGURACION PAGINA
+# ==========================================
 st.set_page_config(page_title="Auditoría Integral de Planta", layout="wide")
 
 # ==========================================
@@ -13,8 +15,8 @@ url_logo = "https://raw.githubusercontent.com/gracielaarias-sketch/INDICADORES/r
 st.sidebar.image(url_logo, use_container_width=True)
 
 # ==========================================
-
-# 2. CARGA DE DATOS ROBUSTA DESDE PANDAS
+# 🆕 CARGA DE DATOS
+# ==========================================
 try:
     url_base = st.secrets["connections"]["gsheets"]["spreadsheet"].strip()
     
@@ -40,7 +42,10 @@ try:
     df_raw = load_pandas_df(url_csv_datos)
     df_oee_raw = load_pandas_df(url_csv_oee)
 
-    # 3. FILTROS
+# ==========================================
+# 🆕 FILTROS
+# ==========================================
+
     st.sidebar.header("📅 Rango de Auditoría")
     min_d = df_raw['Fecha_Filtro'].min().date()
     max_d = df_raw['Fecha_Filtro'].max().date()
@@ -55,7 +60,10 @@ try:
     opciones_maquina = sorted(df_raw[df_raw['Fábrica'].isin(fábricas)]['Máquina'].unique())
     máquinas = st.sidebar.multiselect("Máquina", opciones_maquina, default=opciones_maquina)
 
-    # 4. APLICACIÓN DE FILTROS
+# ==========================================
+# 🆕 FILTROS POR RANGO DE FECHA
+# ==========================================
+    
     if isinstance(rango, (list, tuple)) and len(rango) == 2:
         ini, fin = pd.to_datetime(rango[0]), pd.to_datetime(rango[1])
         df_f = df_raw[(df_raw['Fecha_Filtro'] >= ini) & (df_raw['Fecha_Filtro'] <= fin)]
@@ -64,7 +72,10 @@ try:
     else:
         st.stop()
 
-    # 5. VISUALIZACIÓN OEE CON DESPLEGABLES
+# ==========================================
+# 🆕 DETALLE OEE
+# ==========================================
+
     st.title("🏭 OEE Detallado")
     
     if not df_oee_f.empty:
@@ -89,12 +100,16 @@ try:
             c3.metric("Performance", f"{m['PERF']:.1%}")
             c4.metric("Calidad", f"{m['CAL']:.1%}")
 
-        # SECCIÓN PLANTA GENERAL
+# ==========================================
+# 🆕 GENERAL PLANTA
+# ==========================================
         st.subheader("Planta Total")
         show_metric_row(get_metrics('GENERAL'))
         st.divider()
 
-        # SECCIÓN ESTAMPADO
+# ==========================================
+# 🆕 ESTAMPADO
+# ==========================================
         st.subheader("Estampado")
         show_metric_row(get_metrics('ESTAMPADO'))
         with st.expander("Ver detalle por Líneas (L1, L2, L3, L4)"):
@@ -103,7 +118,9 @@ try:
                 show_metric_row(get_metrics(linea))
         st.divider()
 
-        # SECCIÓN SOLDADURA
+# ==========================================
+# 🆕 SOLDADURA
+# ==========================================
         st.subheader("Soldadura")
         show_metric_row(get_metrics('SOLDADURA'))
         with st.expander("Ver detalle Soldadura (Celda, PRP)"):
@@ -112,7 +129,10 @@ try:
                 show_metric_row(get_metrics(sub))
         st.divider()
 
-    # 6. MÉTRICAS OPERATIVAS (REGISTROS)
+# ==========================================
+# 🆕 TOTALES DE TIEMPO - FALLAS, REFRIGERIO, BAÑO
+# ==========================================
+    
     if not df_f.empty:
         t_prod = float(df_f[df_f['Evento'].astype(str).str.contains('Producción', case=False, na=False)]['Tiempo (Min)'].sum())
         t_fallas = float(df_f[df_f['Nivel Evento 3'].astype(str).str.contains('FALLA', case=False, na=False)]['Tiempo (Min)'].sum())
@@ -123,13 +143,21 @@ try:
         m2.metric("Tiempo en Fallas", f"{t_fallas:,.1f} min")
         m3.metric("Eventos del Periodo", len(df_f))
 
-        # 7. GRÁFICOS
+# ==========================================
+# 🆕 GRAFICOS
+# ==========================================
+      
+
+# 🆕 TORTA, PARADA VS PRODUCCION
+
         g1, g2 = st.columns(2)
         with g1:
             st.plotly_chart(px.pie(df_f, values='Tiempo (Min)', names='Evento', title="Distribución de Tiempo", hole=0.4), use_container_width=True)
         with g2:
             st.plotly_chart(px.bar(df_f, x='Operador', y='Tiempo (Min)', color='Evento', title="Rendimiento por Operador", barmode='group'), use_container_width=True)
-
+            
+# 🆕 TOP 15 FALLAS
+        
         st.divider()
         col_6 = 'Nivel Evento 6' if 'Nivel Evento 6' in df_f.columns else df_f.columns[5]
         df_f6 = df_f[df_f['Nivel Evento 3'].astype(str).str.contains('FALLA', case=False, na=False)]
@@ -138,6 +166,8 @@ try:
             top15 = df_f6.groupby(col_6)['Tiempo (Min)'].sum().nlargest(15).reset_index()
             st.plotly_chart(px.bar(top15, x='Tiempo (Min)', y=col_6, orientation='h', color='Tiempo (Min)', color_continuous_scale='Reds'), use_container_width=True)
 
+# 🆕 MAPA DE CALOR
+        
         st.divider()
         st.subheader("🔥 Mapa de Calor: Máquinas vs Causa")
         df_hm = df_f[df_f['Evento'].astype(str).str.contains('Parada|Falla', case=False, na=False)]
