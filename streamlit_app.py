@@ -255,31 +255,3 @@ with st.expander("📂 Ver registros detallados", expanded=True):
     else:
         st.info("No hay datos para mostrar con los filtros actuales.")
 
-
-st.subheader("📈 Tendencia de OEE Diario")
-
-with st.expander("📂 Ver registros detallados", expanded=True):
-
-# Preparamos los datos (asegurando que OEE sea numérico)
-df_trend = df_oee_f.copy()
-# Limpieza rápida (asumiendo que viene con % o como string)
-if df_trend['OEE'].dtype == 'object':
-    df_trend['OEE_Num'] = df_trend['OEE'].astype(str).str.replace('%','').str.replace(',','.').astype(float)
-else:
-    df_trend['OEE_Num'] = df_trend['OEE']
-
-# Agrupamos por fecha
-trend_data = df_trend.groupby('Fecha_Filtro')['OEE_Num'].mean().reset_index()
-
-fig_trend = px.line(
-    trend_data, 
-    x='Fecha_Filtro', 
-    y='OEE_Num', 
-    markers=True,
-    title='Evolución del OEE (%)',
-    labels={'OEE_Num': 'OEE %', 'Fecha_Filtro': 'Fecha'}
-)
-# Añadir una línea de meta (ej. 85%)
-fig_trend.add_hline(y=85, line_dash="dot", annotation_text="Meta World Class (85%)", annotation_position="bottom right", line_color="green")
-
-st.plotly_chart(fig_trend, use_container_width=True)
