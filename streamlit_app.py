@@ -11,7 +11,7 @@ try:
     
     # GIDs de las pestañas
     gid_datos = "0"
-    gid_oee = "1133129596" # <-- Verifica que este sea el GID de tu pestaña OEE
+    gid_oee = "1767654796" # <-- Verifica que este sea el GID de tu pestaña OEE
     
     url_csv_datos = url_base.split("/edit")[0] + f"/export?format=csv&gid={gid_datos}"
     url_csv_oee = url_base.split("/edit")[0] + f"/export?format=csv&gid={gid_oee}"
