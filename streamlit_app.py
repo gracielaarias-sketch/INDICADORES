@@ -177,10 +177,57 @@ try:
 
 # 🆕 INFORME        
 
-        with st.expander("📂 Ver registros detallados"):
-            df_display = df_f.sort_values(by=['Fecha_Filtro', 'Fecha_DT'])
-            cols_v = ['Fecha_Filtro', 'Hora_Txt', 'Operador', 'Evento', 'Máquina', 'Tiempo (Min)', 'Nivel Evento 4', col_6]
-            st.dataframe(df_display[[c for c in cols_v if c in df_display.columns]], use_container_width=True)
+st.subheader("📋 Registro de Eventos")
 
+with st.expander("📂 Ver registros detallados ", expanded=True):
+    if not df_f.empty:
+        # 1. Crear copia para no afectar los gráficos
+        df_export = df_f.copy()
+
+        # 2. Calcular Hora Fin (Fecha Inicio + Duración en minutos)
+        # Convertimos 'Tiempo (Min)' a timedelta y lo sumamos a la fecha original
+        df_export['Fecha_Fin'] = df_export['Fecha_DT'] + pd.to_timedelta(df_export['Tiempo (Min)'], unit='m')
+
+        # 3. Formatear para que solo se vea la Hora (HH:MM)
+        # Nota: Usamos .dt.strftime para que quede bonito en la tabla
+        df_export['Inicio'] = df_export['Fecha_DT'].dt.strftime('%H:%M')
+        df_export['Fin'] = df_export['Fecha_Fin'].dt.strftime('%H:%M')
+        
+        # 4. Formatear Fecha corta
+        df_export['Fecha'] = df_export['Fecha_DT'].dt.strftime('%d-%m-%Y')
+
+        # 5. ORDENAR: Primero por Máquina, luego por Hora
+        df_export = df_export.sort_values(by=['Máquina', 'Fecha_DT'], ascending=[True, True])
+
+        # 6. Selección y Orden de Columnas para mostrar
+        cols_visibles = [
+            'Máquina', 
+            'Fecha', 
+            'Inicio', 
+            'Fin', 
+            'Tiempo (Min)', 
+            'Evento', 
+            'Nivel Evento 3', # Falla General
+            'Nivel Evento 6', # Causa Raíz
+            'Operador'
+        ]
+        
+        # Filtramos solo las columnas que existen (por seguridad)
+        cols_finales = [c for c in cols_visibles if c in df_export.columns]
+
+        # 7. Mostrar Tabla
+        st.dataframe(
+            df_export[cols_finales], 
+            use_container_width=True, 
+            hide_index=True, # Oculta el índice numérico feo (0,1,2...)
+            column_config={
+                "Tiempo (Min)": st.column_config.NumberColumn(
+                    "Minutos",
+                    format="%.1f min" # Formato con 1 decimal
+                )
+            }
+        )
+    else:
+        st.info("No hay datos para mostrar con los filtros actuales.")
 except Exception as e:
     st.error(f"Error crítico: {e}")
