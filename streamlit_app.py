@@ -229,5 +229,7 @@ with st.expander("📂 Ver registros detallados ", expanded=True):
         )
     else:
         st.info("No hay datos para mostrar con los filtros actuales.")
+
+
 except Exception as e:
     st.error(f"Error crítico: {e}")
