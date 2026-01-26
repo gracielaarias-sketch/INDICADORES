@@ -1,8 +1,3 @@
-Entendido. He reorganizado tu código original para que la estructura se mantenga idéntica, pero moviendo la lógica y la visualización del Mapa de Calor al final de la sección de gráficos.
-
-Aquí tienes el código con el orden corregido:
-
-Python
 
 import streamlit as st
 import pandas as pd
