@@ -5,6 +5,18 @@ import plotly.express as px
 # 1. CONFIGURACIÓN DE LA PÁGINA
 st.set_page_config(page_title="Auditoría Integral de Planta", layout="wide")
 
+# ==========================================
+# 🆕 AÑADIR LOGO AL ENCABEZADO
+# ==========================================
+# Reemplaza la URL de abajo por tu enlace "Raw" de GitHub
+url_logo_ejemplo = "https://raw.githubusercontent.com/gracielaarias-sketch/indicadores/main/logofamma.png"
+
+try:
+    st.logo(image=url_logo_ejemplo, icon_image=url_logo_ejemplo)
+except AttributeError:
+    st.sidebar.image(url_logo_ejemplo, use_column_width=True)
+# ==========================================
+
 # 2. CARGA DE DATOS ROBUSTA DESDE PANDAS
 try:
     url_base = st.secrets["connections"]["gsheets"]["spreadsheet"].strip()
