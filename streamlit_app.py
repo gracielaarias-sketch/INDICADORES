@@ -1,9 +1,3 @@
-Entendido. He ajustado el código para que los cálculos de BAÑO y REFRIGERIO busquen la información exclusivamente en la columna 'Nivel Evento 4'. Esto solucionará definitivamente el problema de que ambos promedios den el mismo valor, ya que ahora son específicos a su categoría.
-
-He mantenido la carga de Pandas, la fecha robusta y el Mapa de Calor al final.
-
-Python
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
