@@ -97,7 +97,6 @@ try:
             fig_operador = px.bar(df_filtrado, x='Operador', y='Tiempo (Min)', color='Evento', title="Rendimiento por Operador")
             st.plotly_chart(fig_operador, use_container_width=True)
 
-st.divider()
 
 # 1. MAPA DE CALOR (Máquina vs Nivel Evento 6)
 st.subheader("🔥 Mapa de Calor: Máquinas vs Causa Raíz (Nivel 6)")
