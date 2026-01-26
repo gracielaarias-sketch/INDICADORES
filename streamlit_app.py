@@ -3,202 +3,211 @@ import pandas as pd
 import plotly.express as px
 
 # ==========================================
-# 🆕 CONFIGURACION PAGINA
+# 1. CONFIGURACIÓN Y ESTILOS
 # ==========================================
-st.set_page_config(page_title="Auditoría Integral de Planta", layout="wide")
+st.set_page_config(page_title="Auditoría Integral de Planta", layout="wide", page_icon="🏭")
 
 # ==========================================
-# 🆕 LOGO GRANDE EN BARRA LATERAL 
+# 2. LOGO BARRA LATERAL
 # ==========================================
-url_logo = "https://raw.githubusercontent.com/gracielaarias-sketch/INDICADORES/refs/heads/main/LOGOFAMMA.png?token=GHSAT0AAAAAADUB4YKJ5G5TPVKNFQIQ5JD62LXPWXA"
-# 'use_container_width=True' hace que ocupe todo el ancho de la columna
-st.sidebar.image(url_logo, use_container_width=True)
+with st.sidebar:
+    url_logo = "https://raw.githubusercontent.com/gracielaarias-sketch/INDICADORES/refs/heads/main/LOGOFAMMA.png"
+    st.image(url_logo, use_container_width=True)
 
 # ==========================================
-# 🆕 CARGA DE DATOS
+# 3. CARGA DE DATOS ROBUSTA
 # ==========================================
-try:
-    url_base = st.secrets["connections"]["gsheets"]["spreadsheet"].strip()
-    
-    gid_datos = "0"
-    gid_oee = "1767654796" 
-    
-    url_csv_datos = url_base.split("/edit")[0] + f"/export?format=csv&gid={gid_datos}"
-    url_csv_oee = url_base.split("/edit")[0] + f"/export?format=csv&gid={gid_oee}"
+@st.cache_data(ttl=300)
+def load_data():
+    try:
+        # Intentar leer URL de secrets, o usar string vacío si falla
+        try:
+            url_base = st.secrets["connections"]["gsheets"]["spreadsheet"].strip()
+        except:
+            st.error("⚠️ No se encontró la configuración de secretos (secrets.toml).")
+            return pd.DataFrame(), pd.DataFrame()
 
-    @st.cache_data(ttl=300)
-    def load_pandas_df(url):
-        df = pd.read_csv(url)
-        if 'Tiempo (Min)' in df.columns:
-            df['Tiempo (Min)'] = df['Tiempo (Min)'].astype(str).str.replace(',', '.')
-            df['Tiempo (Min)'] = pd.to_numeric(df['Tiempo (Min)'], errors='coerce').fillna(0.0)
+        gid_datos = "0"
+        gid_oee = "1767654796"
         
-        col_fecha = next((c for c in df.columns if c.lower() == 'fecha'), None)
-        if col_fecha:
-            df['Fecha_DT'] = pd.to_datetime(df[col_fecha], dayfirst=True, errors='coerce')
-            df['Fecha_Filtro'] = df['Fecha_DT'].dt.normalize()
-        return df
+        url_csv_datos = url_base.split("/edit")[0] + f"/export?format=csv&gid={gid_datos}"
+        url_csv_oee = url_base.split("/edit")[0] + f"/export?format=csv&gid={gid_oee}"
 
-    df_raw = load_pandas_df(url_csv_datos)
-    df_oee_raw = load_pandas_df(url_csv_oee)
-
-# ==========================================
-# 🆕 FILTROS
-# ==========================================
-
-    st.sidebar.header("📅 Rango de Auditoría")
-    min_d = df_raw['Fecha_Filtro'].min().date()
-    max_d = df_raw['Fecha_Filtro'].max().date()
-    rango = st.sidebar.date_input("Periodo", [min_d, max_d], key="audit_range")
-
-    st.sidebar.header("⚙️ Filtros de Planta")
-    df_raw['Fábrica'] = df_raw['Fábrica'].fillna('Sin Especificar').astype(str)
-    df_raw['Máquina'] = df_raw['Máquina'].fillna('Sin Especificar').astype(str)
-    
-    opciones_fabrica = sorted(df_raw['Fábrica'].unique())
-    fábricas = st.sidebar.multiselect("Fábrica", opciones_fabrica, default=opciones_fabrica)
-    opciones_maquina = sorted(df_raw[df_raw['Fábrica'].isin(fábricas)]['Máquina'].unique())
-    máquinas = st.sidebar.multiselect("Máquina", opciones_maquina, default=opciones_maquina)
-
-# ==========================================
-# 🆕 FILTROS POR RANGO DE FECHA
-# ==========================================
-    
-    if isinstance(rango, (list, tuple)) and len(rango) == 2:
-        ini, fin = pd.to_datetime(rango[0]), pd.to_datetime(rango[1])
-        df_f = df_raw[(df_raw['Fecha_Filtro'] >= ini) & (df_raw['Fecha_Filtro'] <= fin)]
-        df_f = df_f[df_f['Fábrica'].isin(fábricas) & df_f['Máquina'].isin(máquinas)]
-        df_oee_f = df_oee_raw[(df_oee_raw['Fecha_Filtro'] >= ini) & (df_oee_raw['Fecha_Filtro'] <= fin)] if not df_oee_raw.empty else pd.DataFrame()
-    else:
-        st.stop()
-
-# ==========================================
-# 🆕 DETALLE OEE
-# ==========================================
-
-    st.title("🏭 OEE Detallado")
-    
-    if not df_oee_f.empty:
-        def get_metrics(name_filter):
-            mask = df_oee_f.apply(lambda row: row.astype(str).str.upper().str.contains(name_filter.upper()).any(), axis=1)
-            datos = df_oee_f[mask]
-            m = {'OEE': 0.0, 'DISP': 0.0, 'PERF': 0.0, 'CAL': 0.0}
-            if not datos.empty:
-                cols_map = {'OEE': 'OEE', 'DISP': 'Disponibilidad', 'PERF': 'Performance', 'CAL': 'Calidad'}
-                for key, col_search in cols_map.items():
-                    actual_col = next((c for c in datos.columns if col_search.lower() in c.lower()), None)
-                    if actual_col:
-                        val = str(datos[actual_col].iloc[0]).replace('%', '').replace(',', '.')
-                        val_num = pd.to_numeric(val, errors='coerce')
-                        m[key] = float(val_num / 100 if val_num > 1.0 else val_num)
-            return m
-
-        def show_metric_row(m):
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("OEE", f"{m['OEE']:.1%}")
-            c2.metric("Disponibilidad", f"{m['DISP']:.1%}")
-            c3.metric("Performance", f"{m['PERF']:.1%}")
-            c4.metric("Calidad", f"{m['CAL']:.1%}")
-
-# ==========================================
-# 🆕 GENERAL PLANTA
-# ==========================================
-        st.subheader("Planta Total")
-        show_metric_row(get_metrics('GENERAL'))
-        st.divider()
-
-# ==========================================
-# 🆕 ESTAMPADO
-# ==========================================
-        st.subheader("Estampado")
-        show_metric_row(get_metrics('ESTAMPADO'))
-        with st.expander("Ver detalle por Líneas (L1, L2, L3, L4)"):
-            for linea in ['L1', 'L2', 'L3', 'L4']:
-                st.markdown(f"**Línea {linea}**")
-                show_metric_row(get_metrics(linea))
-        st.divider()
-
-# ==========================================
-# 🆕 SOLDADURA
-# ==========================================
-        st.subheader("Soldadura")
-        show_metric_row(get_metrics('SOLDADURA'))
-        with st.expander("Ver detalle Soldadura (Celda, PRP)"):
-            for sub in ['CELDA', 'PRP']:
-                st.markdown(f"**Proceso {sub}**")
-                show_metric_row(get_metrics(sub))
-        st.divider()
-
-# ==========================================
-# 🆕 TOTALES DE TIEMPO - FALLAS, REFRIGERIO, BAÑO
-# ==========================================
-    
-    if not df_f.empty:
-        t_prod = float(df_f[df_f['Evento'].astype(str).str.contains('Producción', case=False, na=False)]['Tiempo (Min)'].sum())
-        t_fallas = float(df_f[df_f['Nivel Evento 3'].astype(str).str.contains('FALLA', case=False, na=False)]['Tiempo (Min)'].sum())
-        
-        st.subheader("Resumen de Tiempos Registrados")
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Producción Real", f"{t_prod:,.1f} min")
-        m2.metric("Tiempo en Fallas", f"{t_fallas:,.1f} min")
-        m3.metric("Eventos del Periodo", len(df_f))
-
-# ==========================================
-# 🆕 GRAFICOS
-# ==========================================
-      
-
-# 🆕 TORTA, PARADA VS PRODUCCION
-
-        g1, g2 = st.columns(2)
-        with g1:
-            st.plotly_chart(px.pie(df_f, values='Tiempo (Min)', names='Evento', title="Distribución de Tiempo", hole=0.4), use_container_width=True)
-        with g2:
-            st.plotly_chart(px.bar(df_f, x='Operador', y='Tiempo (Min)', color='Evento', title="Rendimiento por Operador", barmode='group'), use_container_width=True)
+        def process_df(url):
+            df = pd.read_csv(url)
             
-# 🆕 TOP 15 FALLAS
-        
-        st.divider()
-        col_6 = 'Nivel Evento 6' if 'Nivel Evento 6' in df_f.columns else df_f.columns[5]
-        df_f6 = df_f[df_f['Nivel Evento 3'].astype(str).str.contains('FALLA', case=False, na=False)]
-        if not df_f6.empty:
-            st.subheader(f"⚠️ Top 15 Fallas Detalladas ({col_6})")
-            top15 = df_f6.groupby(col_6)['Tiempo (Min)'].sum().nlargest(15).reset_index()
-            st.plotly_chart(px.bar(top15, x='Tiempo (Min)', y=col_6, orientation='h', color='Tiempo (Min)', color_continuous_scale='Reds'), use_container_width=True)
+            # Limpieza de Tiempos (Manejo de comas y nulos)
+            if 'Tiempo (Min)' in df.columns:
+                df['Tiempo (Min)'] = df['Tiempo (Min)'].astype(str).str.replace(',', '.')
+                df['Tiempo (Min)'] = pd.to_numeric(df['Tiempo (Min)'], errors='coerce').fillna(0.0)
+            
+            # Limpieza de Fechas
+            col_fecha = next((c for c in df.columns if 'fecha' in c.lower()), None)
+            if col_fecha:
+                df['Fecha_DT'] = pd.to_datetime(df[col_fecha], dayfirst=True, errors='coerce')
+                df['Fecha_Filtro'] = df['Fecha_DT'].dt.normalize()
+            
+            # Rellenar textos nulos
+            for col in ['Fábrica', 'Máquina', 'Evento', 'Nivel Evento 3', 'Nivel Evento 6']:
+                if col in df.columns:
+                    df[col] = df[col].fillna('Sin Especificar').astype(str)
+            
+            return df
 
-# 🆕 MAPA DE CALOR
-        
-        st.divider()
-        st.subheader("🔥 Mapa de Calor: Máquinas vs Causa")
-        df_hm = df_f[df_f['Evento'].astype(str).str.contains('Parada|Falla', case=False, na=False)]
-        if not df_hm.empty:
-            pivot_hm = df_hm.groupby(['Máquina', col_6])['Tiempo (Min)'].sum().reset_index()
-            st.plotly_chart(px.density_heatmap(pivot_hm, x=col_6, y="Máquina", z="Tiempo (Min)", color_continuous_scale="Viridis", text_auto=True), use_container_width=True)
+        return process_df(url_csv_datos), process_df(url_csv_oee)
 
-# 🆕 INFORME        
+    except Exception as e:
+        st.error(f"Error cargando datos: {e}")
+        return pd.DataFrame(), pd.DataFrame()
 
+df_raw, df_oee_raw = load_data()
+
+# ==========================================
+# 4. FILTROS
+# ==========================================
+if df_raw.empty:
+    st.stop()
+
+st.sidebar.header("📅 Rango de Auditoría")
+min_d = df_raw['Fecha_Filtro'].min().date() if not df_raw.empty else None
+max_d = df_raw['Fecha_Filtro'].max().date() if not df_raw.empty else None
+
+if min_d and max_d:
+    rango = st.sidebar.date_input("Periodo", [min_d, max_d], key="audit_range")
+else:
+    st.stop()
+
+st.sidebar.header("⚙️ Filtros de Planta")
+opciones_fabrica = sorted(df_raw['Fábrica'].unique())
+fábricas = st.sidebar.multiselect("Fábrica", opciones_fabrica, default=opciones_fabrica)
+
+# Filtro de Máquinas dinámico
+df_temp = df_raw[df_raw['Fábrica'].isin(fábricas)]
+opciones_maquina = sorted(df_temp['Máquina'].unique())
+máquinas = st.sidebar.multiselect("Máquina", opciones_maquina, default=opciones_maquina)
+
+# Aplicar filtros
+if isinstance(rango, (list, tuple)) and len(rango) == 2:
+    ini, fin = pd.to_datetime(rango[0]), pd.to_datetime(rango[1])
+    df_f = df_raw[(df_raw['Fecha_Filtro'] >= ini) & (df_raw['Fecha_Filtro'] <= fin)]
+    df_f = df_f[df_f['Fábrica'].isin(fábricas) & df_f['Máquina'].isin(máquinas)]
+    
+    # OEE Filter
+    df_oee_f = df_oee_raw[(df_oee_raw['Fecha_Filtro'] >= ini) & (df_oee_raw['Fecha_Filtro'] <= fin)]
+else:
+    st.info("Seleccione un rango de fechas válido.")
+    st.stop()
+
+# ==========================================
+# 5. OEE SECTION
+# ==========================================
+st.title("🏭 OEE Detallado")
+
+def get_metrics(name_filter):
+    if df_oee_f.empty: return {'OEE': 0, 'DISP': 0, 'PERF': 0, 'CAL': 0}
+    
+    mask = df_oee_f.apply(lambda row: row.astype(str).str.upper().str.contains(name_filter.upper()).any(), axis=1)
+    datos = df_oee_f[mask]
+    m = {'OEE': 0.0, 'DISP': 0.0, 'PERF': 0.0, 'CAL': 0.0}
+    
+    if not datos.empty:
+        cols_map = {'OEE': 'OEE', 'DISP': 'Disponibilidad', 'PERF': 'Performance', 'CAL': 'Calidad'}
+        for key, col_search in cols_map.items():
+            actual_col = next((c for c in datos.columns if col_search.lower() in c.lower()), None)
+            if actual_col:
+                val = str(datos[actual_col].iloc[0]).replace('%', '').replace(',', '.')
+                val_num = pd.to_numeric(val, errors='coerce')
+                m[key] = float(val_num / 100 if val_num > 1.0 else val_num)
+    return m
+
+def show_metric_row(m):
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("OEE", f"{m['OEE']:.1%}")
+    c2.metric("Disponibilidad", f"{m['DISP']:.1%}")
+    c3.metric("Performance", f"{m['PERF']:.1%}")
+    c4.metric("Calidad", f"{m['CAL']:.1%}")
+
+st.subheader("Planta Total")
+show_metric_row(get_metrics('GENERAL'))
 st.divider()
-with st.expander("📂 Ver registros detallados ", expanded=True):
+
+col_t1, col_t2 = st.tabs(["Estampado", "Soldadura"])
+
+with col_t1:
+    st.markdown("**Total Estampado**")
+    show_metric_row(get_metrics('ESTAMPADO'))
+    with st.expander("Ver detalle Líneas (L1-L4)"):
+        for linea in ['L1', 'L2', 'L3', 'L4']:
+            st.caption(f"Línea {linea}")
+            show_metric_row(get_metrics(linea))
+
+with col_t2:
+    st.markdown("**Total Soldadura**")
+    show_metric_row(get_metrics('SOLDADURA'))
+    with st.expander("Ver detalle (Celda, PRP)"):
+        for sub in ['CELDA', 'PRP']:
+            st.caption(f"Proceso {sub}")
+            show_metric_row(get_metrics(sub))
+
+# ==========================================
+# 6. GRÁFICOS Y TIEMPOS
+# ==========================================
+st.divider()
+
+if not df_f.empty:
+    t_prod = df_f[df_f['Evento'].astype(str).str.contains('Producción', case=False)]['Tiempo (Min)'].sum()
+    t_fallas = df_f[df_f['Nivel Evento 3'].astype(str).str.contains('FALLA', case=False)]['Tiempo (Min)'].sum()
+    
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Producción Real", f"{t_prod:,.0f} min")
+    m2.metric("Tiempo en Fallas", f"{t_fallas:,.0f} min", delta="-Pérdida", delta_color="inverse")
+    m3.metric("Eventos Registrados", len(df_f))
+
+    g1, g2 = st.columns(2)
+    with g1:
+        st.plotly_chart(px.pie(df_f, values='Tiempo (Min)', names='Evento', title="Distribución de Tiempo", hole=0.4), use_container_width=True)
+    with g2:
+        st.plotly_chart(px.bar(df_f, x='Operador', y='Tiempo (Min)', color='Evento', title="Rendimiento por Operador"), use_container_width=True)
+
+    # Top 15 Fallas
+    col_6 = 'Nivel Evento 6' if 'Nivel Evento 6' in df_f.columns else df_f.columns[5]
+    df_f6 = df_f[df_f['Nivel Evento 3'].astype(str).str.contains('FALLA', case=False)]
+    
+    if not df_f6.empty:
+        st.divider()
+        st.subheader(f"⚠️ Top 15 Fallas Detalladas ({col_6})")
+        top15 = df_f6.groupby(col_6)['Tiempo (Min)'].sum().nlargest(15).reset_index()
+        st.plotly_chart(px.bar(top15, x='Tiempo (Min)', y=col_6, orientation='h', color='Tiempo (Min)', color_continuous_scale='Reds'), use_container_width=True)
+
+        st.subheader("🔥 Mapa de Calor: Máquinas vs Causa")
+        pivot_hm = df_f6.groupby(['Máquina', col_6])['Tiempo (Min)'].sum().reset_index()
+        st.plotly_chart(px.density_heatmap(pivot_hm, x=col_6, y="Máquina", z="Tiempo (Min)", color_continuous_scale="Viridis", text_auto=True), use_container_width=True)
+
+# ==========================================
+# 🆕 7. INFORME DETALLADO (TU NUEVO CÓDIGO)
+# ==========================================
+st.divider()
+st.subheader("📋 Registro de Eventos")
+
+with st.expander("📂 Ver registros detallados (Con Horarios)", expanded=True):
     if not df_f.empty:
-        # 1. Crear copia para no afectar los gráficos
+        # 1. Crear copia
         df_export = df_f.copy()
 
-        # 2. Calcular Hora Fin (Fecha Inicio + Duración en minutos)
-        # Convertimos 'Tiempo (Min)' a timedelta y lo sumamos a la fecha original
+        # 2. Calcular Hora Fin
         df_export['Fecha_Fin'] = df_export['Fecha_DT'] + pd.to_timedelta(df_export['Tiempo (Min)'], unit='m')
 
-        # 3. Formatear para que solo se vea la Hora (HH:MM)
-        # Nota: Usamos .dt.strftime para que quede bonito en la tabla
+        # 3. Formatear Horas (HH:MM)
         df_export['Inicio'] = df_export['Fecha_DT'].dt.strftime('%H:%M')
         df_export['Fin'] = df_export['Fecha_Fin'].dt.strftime('%H:%M')
         
-        # 4. Formatear Fecha corta
+        # 4. Formatear Fecha
         df_export['Fecha'] = df_export['Fecha_DT'].dt.strftime('%d-%m-%Y')
 
-        # 5. ORDENAR: Primero por Máquina, luego por Hora
+        # 5. ORDENAR: Máquina -> Hora
         df_export = df_export.sort_values(by=['Máquina', 'Fecha_DT'], ascending=[True, True])
 
-        # 6. Selección y Orden de Columnas para mostrar
+        # 6. Selección de columnas
         cols_visibles = [
             'Máquina', 
             'Fecha', 
@@ -206,29 +215,26 @@ with st.expander("📂 Ver registros detallados ", expanded=True):
             'Fin', 
             'Tiempo (Min)', 
             'Evento', 
-            'Nivel Evento 3', # Falla General
-            'Nivel Evento 6', # Causa Raíz
+            'Nivel Evento 3',
+            'Nivel Evento 6',
             'Operador'
         ]
         
-        # Filtramos solo las columnas que existen (por seguridad)
         cols_finales = [c for c in cols_visibles if c in df_export.columns]
 
         # 7. Mostrar Tabla
         st.dataframe(
             df_export[cols_finales], 
             use_container_width=True, 
-            hide_index=True, # Oculta el índice numérico feo (0,1,2...)
+            hide_index=True,
             column_config={
                 "Tiempo (Min)": st.column_config.NumberColumn(
                     "Minutos",
-                    format="%.1f min" # Formato con 1 decimal
+                    format="%.1f min"
                 )
             }
         )
     else:
         st.info("No hay datos para mostrar con los filtros actuales.")
-
-
 except Exception as e:
     st.error(f"Error crítico: {e}")
