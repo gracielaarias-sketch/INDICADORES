@@ -8,13 +8,6 @@ import plotly.express as px
 st.set_page_config(page_title="Indicadores FAMMA", layout="wide", page_icon="🏭")
 
 # ==========================================
-# 2. LOGO BARRA LATERAL
-# ==========================================
-with st.sidebar:
-    url_logo = "https://raw.githubusercontent.com/gracielaarias-sketch/INDICADORES/refs/heads/main/LOGOFAMMA.png"
-    st.image(url_logo, use_container_width=True)
-
-# ==========================================
 # 3. CARGA DE DATOS ROBUSTA
 # ==========================================
 @st.cache_data(ttl=300)
