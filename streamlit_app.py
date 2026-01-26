@@ -41,6 +41,49 @@ try:
     max_d = df_raw['Fecha'].max().date()
 
     rango = st.sidebar.date_input("Rango de fechas", [min_d, max_d], min_value=min_d, max_value=max_d)
+    fábricas = st.sidebar.multiselect("Fábrimport streamlit as st
+import pandas as pd
+import plotly.express as px
+
+# 1. CONFIGURACIÓN DE LA PÁGINA
+st.set_page_config(page_title="Dashboard de Producción", layout="wide")
+
+# 2. CARGA DE DATOS ROBUSTA CON PANDAS
+try:
+    url_base = st.secrets["connections"]["gsheets"]["spreadsheet"].strip()
+    url_csv = url_base.split("/edit")[0] + "/export?format=csv&gid=0"
+
+    @st.cache_data(ttl=300)
+    def load_data(url):
+        # Lectura directa desde Pandas
+        data = pd.read_csv(url)
+        
+        # Limpieza de columna Tiempo
+        if 'Tiempo (Min)' in data.columns:
+            data['Tiempo (Min)'] = data['Tiempo (Min)'].astype(str).str.replace(',', '.')
+            data['Tiempo (Min)'] = pd.to_numeric(data['Tiempo (Min)'], errors='coerce').fillna(0)
+        
+        # --- BLOQUE DE FECHA ROBUSTA ---
+        if 'Fecha' in data.columns:
+            # Convertimos a datetime y normalizamos (eliminamos horas/minutos ocultos)
+            data['Fecha'] = pd.to_datetime(data['Fecha'], dayfirst=True, errors='coerce').dt.normalize()
+        
+        # Limpieza de textos para evitar errores en filtros .str
+        cols_texto = ['Operador', 'Evento', 'Fábrica', 'Máquina', 'Nivel Evento 3', 'Nivel Evento 4', 'Nivel Evento 6']
+        for col in cols_texto:
+            if col in data.columns:
+                data[col] = data[col].astype(str).replace('nan', '').fillna('')
+            
+        return data.dropna(subset=['Operador', 'Evento'])
+
+    df_raw = load_data(url_csv)
+
+    # 3. FILTROS EN LA BARRA LATERAL
+    st.sidebar.header("📅 Filtros de Análisis")
+    min_d = df_raw['Fecha'].min().date()
+    max_d = df_raw['Fecha'].max().date()
+
+    rango = st.sidebar.date_input("Rango de fechas", [min_d, max_d], min_value=min_d, max_value=max_d)
     fábricas = st.sidebar.multiselect("Fábrica", df_raw['Fábrica'].unique(), default=df_raw['Fábrica'].unique())
     máquinas = st.sidebar.multiselect("Máquina", df_raw['Máquina'].unique(), default=df_raw['Máquina'].unique())
 
