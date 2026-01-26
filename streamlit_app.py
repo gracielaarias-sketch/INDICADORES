@@ -81,7 +81,7 @@ try:
             c4.metric("Calidad", f"{m['CAL']:.1%}")
 
         # SECCIÓN PLANTA GENERAL
-        st.subheader("🏢 Planta Total")
+        st.subheader("Planta Total")
         show_metric_row(get_metrics('GENERAL'))
         st.divider()
 
