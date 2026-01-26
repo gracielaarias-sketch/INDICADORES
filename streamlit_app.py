@@ -20,7 +20,6 @@ with st.sidebar:
 @st.cache_data(ttl=300)
 def load_data():
     try:
-        # Intentar leer URL de secrets, o usar string vacío si falla
         try:
             url_base = st.secrets["connections"]["gsheets"]["spreadsheet"].strip()
         except:
@@ -36,7 +35,7 @@ def load_data():
         def process_df(url):
             df = pd.read_csv(url)
             
-            # Limpieza de Tiempos (Manejo de comas y nulos)
+            # Limpieza de Tiempos
             if 'Tiempo (Min)' in df.columns:
                 df['Tiempo (Min)'] = df['Tiempo (Min)'].astype(str).str.replace(',', '.')
                 df['Tiempo (Min)'] = pd.to_numeric(df['Tiempo (Min)'], errors='coerce').fillna(0.0)
@@ -47,7 +46,7 @@ def load_data():
                 df['Fecha_DT'] = pd.to_datetime(df[col_fecha], dayfirst=True, errors='coerce')
                 df['Fecha_Filtro'] = df['Fecha_DT'].dt.normalize()
             
-            # Rellenar textos nulos
+            # Rellenar textos nulos para evitar errores en filtros
             for col in ['Fábrica', 'Máquina', 'Evento', 'Nivel Evento 3', 'Nivel Evento 6']:
                 if col in df.columns:
                     df[col] = df[col].fillna('Sin Especificar').astype(str)
@@ -81,18 +80,15 @@ st.sidebar.header("⚙️ Filtros de Planta")
 opciones_fabrica = sorted(df_raw['Fábrica'].unique())
 fábricas = st.sidebar.multiselect("Fábrica", opciones_fabrica, default=opciones_fabrica)
 
-# Filtro de Máquinas dinámico
 df_temp = df_raw[df_raw['Fábrica'].isin(fábricas)]
 opciones_maquina = sorted(df_temp['Máquina'].unique())
 máquinas = st.sidebar.multiselect("Máquina", opciones_maquina, default=opciones_maquina)
 
-# Aplicar filtros
 if isinstance(rango, (list, tuple)) and len(rango) == 2:
     ini, fin = pd.to_datetime(rango[0]), pd.to_datetime(rango[1])
     df_f = df_raw[(df_raw['Fecha_Filtro'] >= ini) & (df_raw['Fecha_Filtro'] <= fin)]
     df_f = df_f[df_f['Fábrica'].isin(fábricas) & df_f['Máquina'].isin(máquinas)]
     
-    # OEE Filter
     df_oee_f = df_oee_raw[(df_oee_raw['Fecha_Filtro'] >= ini) & (df_oee_raw['Fecha_Filtro'] <= fin)]
 else:
     st.info("Seleccione un rango de fechas válido.")
@@ -159,8 +155,10 @@ if not df_f.empty:
     t_fallas = df_f[df_f['Nivel Evento 3'].astype(str).str.contains('FALLA', case=False)]['Tiempo (Min)'].sum()
     
     m1, m2, m3 = st.columns(3)
+    
+    # KPIs (Neutros, sin indicación de pérdida visual)
     m1.metric("Producción Real", f"{t_prod:,.0f} min")
-    m2.metric("Tiempo en Fallas", f"{t_fallas:,.0f} min", delta="-Pérdida", delta_color="inverse")
+    m2.metric("Tiempo en Fallas", f"{t_fallas:,.0f} min")
     m3.metric("Eventos Registrados", len(df_f))
 
     g1, g2 = st.columns(2)
@@ -184,54 +182,43 @@ if not df_f.empty:
         st.plotly_chart(px.density_heatmap(pivot_hm, x=col_6, y="Máquina", z="Tiempo (Min)", color_continuous_scale="Viridis", text_auto=True), use_container_width=True)
 
 # ==========================================
-# 🆕 7. INFORME DETALLADO (TU NUEVO CÓDIGO)
+# 7. INFORME DETALLADO (DIRECTO DE TABLA)
 # ==========================================
 st.divider()
 st.subheader("📋 Registro de Eventos")
 
-with st.expander("📂 Ver registros detallados (Con Horarios)", expanded=True):
+with st.expander("📂 Ver registros detallados (Tabla Original)", expanded=True):
     if not df_f.empty:
-        # 1. Crear copia
         df_export = df_f.copy()
 
-        # 2. Calcular Hora Fin
-        df_export['Fecha_Fin'] = df_export['Fecha_DT'] + pd.to_timedelta(df_export['Tiempo (Min)'], unit='m')
-
-        # 3. Formatear Horas (HH:MM)
-        df_export['Inicio'] = df_export['Fecha_DT'].dt.strftime('%H:%M')
-        df_export['Fin'] = df_export['Fecha_Fin'].dt.strftime('%H:%M')
+        # Formatear solo la fecha para que se vea corta (la hora la sacamos de las columnas originales)
+        if 'Fecha_DT' in df_export.columns:
+            df_export['Fecha'] = df_export['Fecha_DT'].dt.strftime('%d-%m-%Y')
+            # Ordenar: Máquina -> Fecha/Hora cronológica
+            df_export = df_export.sort_values(by=['Máquina', 'Fecha_DT'], ascending=[True, True])
         
-        # 4. Formatear Fecha
-        df_export['Fecha'] = df_export['Fecha_DT'].dt.strftime('%d-%m-%Y')
-
-        # 5. ORDENAR: Máquina -> Hora
-        df_export = df_export.sort_values(by=['Máquina', 'Fecha_DT'], ascending=[True, True])
-
-        # 6. Selección de columnas
-        cols_visibles = [
+        # Lista de columnas que QUIERES mostrar
+        # Incluyo variantes comunes por si acaso (Hora Inicio, Hora Fin, Hora_Txt)
+        cols_deseadas = [
             'Máquina', 
             'Fecha', 
-            'Inicio', 
-            'Fin', 
+            'Hora Inicio', 'Hora Fin', 'Hora_Txt', # Busca estas columnas en tu excel
             'Tiempo (Min)', 
             'Evento', 
-            'Nivel Evento 3',
-            'Nivel Evento 6',
+            'Nivel Evento 3', 
+            'Nivel Evento 6', 
             'Operador'
         ]
         
-        cols_finales = [c for c in cols_visibles if c in df_export.columns]
+        # Filtramos para mostrar solo las que realmente existen en el archivo
+        cols_finales = [c for c in cols_deseadas if c in df_export.columns]
 
-        # 7. Mostrar Tabla
         st.dataframe(
             df_export[cols_finales], 
             use_container_width=True, 
             hide_index=True,
             column_config={
-                "Tiempo (Min)": st.column_config.NumberColumn(
-                    "Minutos",
-                    format="%.1f min"
-                )
+                "Tiempo (Min)": st.column_config.NumberColumn("Minutos", format="%.1f min")
             }
         )
     else:
