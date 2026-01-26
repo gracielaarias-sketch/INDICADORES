@@ -4,15 +4,17 @@ import plotly.express as px
 from streamlit_gsheets import GSheetsConnection
 
 
-# 1. Configura la URL de exportación
-# Reemplaza todo lo que está entre comillas por tu link, manteniendo el final
-WIIDEM = "https://docs.google.com/spreadsheets/d/1TdQ3yNxx29SgQ7u8oexxlnL80rAcXQuP118wQVBd9ew/export?format=csv"
+# Crear la conexión
+conn = st.connection("gsheets", type=GSheetsConnection)
 
-@st.cache_data(ttl=600) # Se actualiza cada 10 minutos
-def cargar_datos():
-    # Lee los datos directamente de la URL
-    df = pd.read_csv(WIIDEM)
-    return df
+# Limpiamos la URL de cualquier carácter invisible antes de usarla
+url_directa = st.secrets["connections"]["gsheets"]["spreadsheet"].strip()
+
+# Leer los datos usando la URL limpia
+df = conn.read(spreadsheet=url_directa, worksheet="Hoja 1")
+
+st.write("¡Datos cargados correctamente!")
+st.dataframe(df.head())
 
 # Configuración inicial
 st.set_page_config(page_title="Dashboard de Producción", layout="wide")
