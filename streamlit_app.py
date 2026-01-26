@@ -6,8 +6,8 @@ import plotly.express as px
 st.set_page_config(page_title="Dashboard de Producción", layout="wide")
 
 # 2. CARGA DE DATOS DESDE PANDAS (MÉTODO CSV DIRECTO)
-# Obtenemos la URL de los Secrets
 try:
+    # Obtenemos la URL de los Secrets
     url_base = st.secrets["connections"]["gsheets"]["spreadsheet"].strip()
     
     # Convertimos la URL de Google Sheets en una URL de descarga de CSV
@@ -88,7 +88,7 @@ try:
 
     st.divider()
 
-    # 6. GRÁFICOS INTERACTIVOS
+    # 6. GRÁFICOS INTERACTIVOS (Pie y Operador)
     col_g1, col_g2 = st.columns(2)
 
     with col_g1:
@@ -101,8 +101,36 @@ try:
         fig_operador = px.bar(df_filtrado, x='Operador', y='Tiempo (Min)', color='Evento', barmode='group')
         st.plotly_chart(fig_operador, use_container_width=True)
 
-    # 7. ANÁLISIS DE PARADAS
-    st.subheader("🚫 Distribucion de las paradas")
+    # 7. GRÁFICO: TOP 15 FALLAS (AÑADIDO)
+    st.divider()
+    st.subheader("⚠️ Top 15 Principales Fallas (por tiempo acumulado)")
+    
+    df_solo_fallas = df_filtrado[df_filtrado['Nivel Evento 3'].str.contains('FALLA', case=False, na=False)]
+    
+    if not df_solo_fallas.empty:
+        top_15_fallas = (
+            df_solo_fallas.groupby('Nivel Evento 3')['Tiempo (Min)']
+            .sum()
+            .reset_index()
+            .sort_values(by='Tiempo (Min)', ascending=True) # Ascending True para que la barra más larga esté arriba en el gráfico horizontal
+            .tail(15) 
+        )
+        
+        fig_top_fallas = px.bar(
+            top_15_fallas, 
+            x='Tiempo (Min)', 
+            y='Nivel Evento 3', 
+            orientation='h',
+            labels={'Nivel Evento 3': 'Motivo', 'Tiempo (Min)': 'Total Minutos'},
+            color='Tiempo (Min)',
+            color_continuous_scale='Reds'
+        )
+        st.plotly_chart(fig_top_fallas, use_container_width=True)
+    else:
+        st.info("No se encontraron eventos de fallas en este periodo/filtro.")
+
+    # 8. ANÁLISIS DE PARADAS (Distribución General)
+    st.subheader("🚫 Distribución de las paradas")
     df_paradas = df_filtrado[df_filtrado['Evento'].str.contains('Parada', case=False, na=False)]
     if not df_paradas.empty:
         fig_parada = px.bar(df_paradas, x='Nivel Evento 3', y='Tiempo (Min)', color='Máquina')
@@ -110,7 +138,7 @@ try:
     else:
         st.info("No hay paradas registradas para el filtro seleccionado.")
 
-    # 8. VISUALIZACIÓN DE TABLA
+    # 9. VISUALIZACIÓN DE TABLA
     with st.expander("📂 Ver registros completos"):
         st.dataframe(df_filtrado)
 
