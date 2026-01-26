@@ -5,13 +5,12 @@ import plotly.express as px
 # 1. CONFIGURACIÓN DE LA PÁGINA
 st.set_page_config(page_title="Auditoría Integral de Planta", layout="wide")
 
-# 2. CARGA DE DATOS ROBUSTA DESDE PANDAS (Doble Hoja)
+# 2. CARGA DE DATOS ROBUSTA DESDE PANDAS
 try:
     url_base = st.secrets["connections"]["gsheets"]["spreadsheet"].strip()
     
-    # GIDs de las pestañas
     gid_datos = "0"
-    gid_oee = "1767654796" # GID de pestaña OEE
+    gid_oee = "1767654796" 
     
     url_csv_datos = url_base.split("/edit")[0] + f"/export?format=csv&gid={gid_datos}"
     url_csv_oee = url_base.split("/edit")[0] + f"/export?format=csv&gid={gid_oee}"
@@ -19,30 +18,31 @@ try:
     @st.cache_data(ttl=300)
     def load_pandas_df(url):
         df = pd.read_csv(url)
-        # Normalización de Fecha
+        # Limpieza agresiva de Tiempo a Numérico
+        if 'Tiempo (Min)' in df.columns:
+            df['Tiempo (Min)'] = df['Tiempo (Min)'].astype(str).str.replace(',', '.')
+            df['Tiempo (Min)'] = pd.to_numeric(df['Tiempo (Min)'], errors='coerce').fillna(0.0)
+        
+        # NORMALIZACIÓN DE FECHA ROBUSTA
         col_fecha = next((c for c in df.columns if c.lower() == 'fecha'), None)
         if col_fecha:
             df['Fecha_DT'] = pd.to_datetime(df[col_fecha], dayfirst=True, errors='coerce')
             df['Fecha_Filtro'] = df['Fecha_DT'].dt.normalize()
         
-        # Limpieza de valores porcentuales y comas para todas las columnas numéricas
-        for col in df.columns:
-            if df[col].dtype == 'object':
-                df[col] = df[col].astype(str).str.replace('%', '').str.replace(',', '.')
         return df
 
     df_raw = load_pandas_df(url_csv_datos)
     df_oee_raw = load_pandas_df(url_csv_oee)
 
-    # 3. FILTROS EN LA BARRA LATERAL
+    # 3. FILTROS
     st.sidebar.header("📅 Rango de Auditoría")
     min_d = df_raw['Fecha_Filtro'].min().date()
     max_d = df_raw['Fecha_Filtro'].max().date()
     rango = st.sidebar.date_input("Periodo", [min_d, max_d], key="audit_range")
 
     st.sidebar.header("⚙️ Filtros de Planta")
-    df_raw['Fábrica'] = df_raw['Fábrica'].fillna('Sin Especificar')
-    df_raw['Máquina'] = df_raw['Máquina'].fillna('Sin Especificar')
+    df_raw['Fábrica'] = df_raw['Fábrica'].fillna('Sin Especificar').astype(str)
+    df_raw['Máquina'] = df_raw['Máquina'].fillna('Sin Especificar').astype(str)
     
     opciones_fabrica = sorted(df_raw['Fábrica'].unique())
     fábricas = st.sidebar.multiselect("Fábrica", opciones_fabrica, default=opciones_fabrica)
@@ -50,35 +50,36 @@ try:
     opciones_maquina = sorted(df_raw[df_raw['Fábrica'].isin(fábricas)]['Máquina'].unique())
     máquinas = st.sidebar.multiselect("Máquina", opciones_maquina, default=opciones_maquina)
 
-    # 4. APLICACIÓN DE FILTROS ROBUSTOS
+    # 4. APLICACIÓN DE FILTROS
     if isinstance(rango, (list, tuple)) and len(rango) == 2:
         ini, fin = pd.to_datetime(rango[0]), pd.to_datetime(rango[1])
         df_f = df_raw[(df_raw['Fecha_Filtro'] >= ini) & (df_raw['Fecha_Filtro'] <= fin)]
         df_f = df_f[df_f['Fábrica'].isin(fábricas) & df_f['Máquina'].isin(máquinas)]
-        df_oee_f = df_oee_raw[(df_oee_raw['Fecha_Filtro'] >= ini) & (df_oee_raw['Fecha_Filtro'] <= fin)]
+        df_oee_f = df_oee_raw[(df_oee_raw['Fecha_Filtro'] >= ini) & (df_oee_raw['Fecha_Filtro'] <= fin)] if not df_oee_raw.empty else pd.DataFrame()
     else:
         st.stop()
 
-    # 5. VISUALIZACIÓN DE VALORES OEE DETALLADOS
+    # 5. VISUALIZACIÓN OEE
     st.title("🏭 Auditoría de Planta: OEE & Producción")
     
     if not df_oee_f.empty:
         def get_area_metrics(area_name):
             mask = df_oee_f.apply(lambda row: row.astype(str).str.upper().str.contains(area_name.upper()).any(), axis=1)
             datos = df_oee_f[mask]
-            metrics = {'OEE': 0, 'DISP': 0, 'PERF': 0, 'CAL': 0}
+            metrics = {'OEE': 0.0, 'DISP': 0.0, 'PERF': 0.0, 'CAL': 0.0}
             
             if not datos.empty:
                 cols_map = {'OEE': 'OEE', 'DISP': 'Disponibilidad', 'PERF': 'Performance', 'CAL': 'Calidad'}
                 for key, col_busq in cols_map.items():
                     actual_col = next((c for c in datos.columns if col_busq.lower() in c.lower()), None)
                     if actual_col:
-                        val = pd.to_numeric(datos[actual_col], errors='coerce').mean()
-                        metrics[key] = val / 100 if val > 1 else val
+                        val_str = str(datos[actual_col].iloc[0]).replace('%', '').replace(',', '.')
+                        val_num = pd.to_numeric(val_str, errors='coerce')
+                        # Si es mayor a 1, asumimos que viene como 85.5 y no 0.855
+                        metrics[key] = float(val_num / 100 if val_num > 1.0 else val_num)
             return metrics
 
         areas = [('GENERAL', 'Planta Total'), ('SOLDADURA', 'Área Soldadura'), ('ESTAMPADO', 'Área Estampado')]
-        
         for area_key, area_label in areas:
             st.markdown(f"### 🎯 Indicadores OEE: {area_label}")
             m = get_area_metrics(area_key)
@@ -90,24 +91,23 @@ try:
         st.divider()
 
     # 6. MÉTRICAS OPERATIVAS
-    if df_f.empty:
-        st.warning("⚠️ No se encontraron registros de eventos para este intervalo.")
-    else:
-        t_prod = df_f[df_f['Evento'].str.contains('Producción', case=False, na=False)]['Tiempo (Min)'].sum()
-        t_fallas = df_f[df_f['Nivel Evento 3'].str.contains('FALLA', case=False, na=False)]['Tiempo (Min)'].sum()
+    if not df_f.empty:
+        t_prod = float(df_f[df_f['Evento'].astype(str).str.contains('Producción', case=False, na=False)]['Tiempo (Min)'].sum())
+        t_fallas = float(df_f[df_f['Nivel Evento 3'].astype(str).str.contains('FALLA', case=False, na=False)]['Tiempo (Min)'].sum())
         
         def get_avg_n4(txt):
-            if 'Nivel Evento 4' in df_f.columns:
-                mask = df_f['Nivel Evento 4'].str.contains(txt, case=False, na=False)
+            col_n4 = next((c for c in df_f.columns if 'Nivel Evento 4' in c), None)
+            if col_n4:
+                mask = df_f[col_n4].astype(str).str.contains(txt, case=False, na=False)
                 val = df_f[mask]['Tiempo (Min)'].mean()
-                return 0 if pd.isna(val) else val
-            return 0
+                return float(val) if pd.notna(val) else 0.0
+            return 0.0
 
         st.subheader("🚀 Totales de Producción")
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Producción Total", f"{t_prod:,.1f} min")
-        c2.metric("Tiempo en Fallas", f"{t_fallas:,.1f} min", delta_color="inverse")
-        c3.metric("Eventos Registrados", len(df_f))
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Producción Total", f"{t_prod:,.1f} min")
+        m2.metric("Tiempo en Fallas", f"{t_fallas:,.1f} min")
+        m3.metric("Eventos", len(df_f))
 
         st.subheader("⏱️ Promedios (Nivel 4)")
         p1, p2, p3 = st.columns(3)
@@ -116,10 +116,9 @@ try:
         p3.metric("Promedio Refrigerio", f"{get_avg_n4('REFRIGERIO'):.2f} min")
         st.divider()
 
-        # 7. SECCIÓN DE GRÁFICOS
+        # 7. GRÁFICOS
         g1, g2 = st.columns(2)
         with g1:
-            df_f['Tiempo (Min)'] = pd.to_numeric(df_f['Tiempo (Min)'], errors='coerce').fillna(0)
             st.plotly_chart(px.pie(df_f, values='Tiempo (Min)', names='Evento', title="Distribución de Tiempo", hole=0.4), use_container_width=True)
         with g2:
             st.plotly_chart(px.bar(df_f, x='Operador', y='Tiempo (Min)', color='Evento', title="Tiempos por Operador", barmode='group'), use_container_width=True)
@@ -132,18 +131,16 @@ try:
         if not df_f6.empty:
             st.subheader(f"⚠️ Top 15 Fallas Detalladas ({col_6})")
             top15 = df_f6.groupby(col_6)['Tiempo (Min)'].sum().nlargest(15).reset_index()
-            fig_f = px.bar(top15, x='Tiempo (Min)', y=col_6, orientation='h', color='Tiempo (Min)', color_continuous_scale='Reds')
-            st.plotly_chart(fig_f, use_container_width=True)
+            st.plotly_chart(px.bar(top15, x='Tiempo (Min)', y=col_6, orientation='h', color='Tiempo (Min)', color_continuous_scale='Reds'), use_container_width=True)
 
         st.divider()
 
-        # MAPA DE CALOR (AL FINAL)
+        # MAPA DE CALOR
         st.subheader("🔥 Mapa de Calor: Máquinas vs Causa")
         df_hm = df_f[df_f['Evento'].astype(str).str.contains('Parada|Falla', case=False, na=False)]
         if not df_hm.empty:
             pivot_hm = df_hm.groupby(['Máquina', col_6])['Tiempo (Min)'].sum().reset_index()
-            fig_hm = px.density_heatmap(pivot_hm, x=col_6, y="Máquina", z="Tiempo (Min)", color_continuous_scale="Viridis", text_auto=True)
-            st.plotly_chart(fig_hm, use_container_width=True)
+            st.plotly_chart(px.density_heatmap(pivot_hm, x=col_6, y="Máquina", z="Tiempo (Min)", color_continuous_scale="Viridis", text_auto=True), use_container_width=True)
 
 except Exception as e:
     st.error(f"Error crítico: {e}")
