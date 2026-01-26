@@ -187,7 +187,7 @@ if not df_f.empty:
 st.divider()
 st.subheader("📋 Registro de Eventos")
 
-with st.expander("📂 Ver registros detallados (Tabla Original)", expanded=True):
+with st.expander("📂 Ver registros detallados", expanded=True):
     if not df_f.empty:
         df_export = df_f.copy()
 
