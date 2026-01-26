@@ -16,7 +16,7 @@ try:
     # Por defecto probamos con gid=12345678 (cambia este número por el gid que ves en la URL de tu navegador al abrir esa pestaña)
     # Si no conoces el GID, puedes probar cargar por nombre si usas librerías como gspread, 
     # pero aquí mantenemos la carga rápida por CSV.
-    gid_oee = "TU_GID_AQUI" # Reemplaza con el ID de la pestaña OEE
+    gid_oee = "1767654796" # Reemplaza con el ID de la pestaña OEE
     url_oee = url_base.split("/edit")[0] + f"/export?format=csv&gid={gid_oee}"
 
     @st.cache_data(ttl=300)
