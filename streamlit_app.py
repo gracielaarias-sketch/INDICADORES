@@ -114,6 +114,36 @@ def get_metrics(name_filter):
                 m[key] = float(val_num / 100 if val_num > 1.0 else val_num)
     return m
 
+
+def show_metric_row(m):
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("OEE", f"{m['OEE']:.1%}")
+    c2.metric("Disponibilidad", f"{m['DISP']:.1%}")
+    c3.metric("Performance", f"{m['PERF']:.1%}")
+    c4.metric("Calidad", f"{m['CAL']:.1%}")
+
+st.subheader("Planta Total")
+show_metric_row(get_metrics('GENERAL'))
+st.divider()
+
+col_t1, col_t2 = st.tabs(["Estampado", "Soldadura"])
+
+with col_t1:
+    st.markdown("**Total Estampado**")
+    show_metric_row(get_metrics('ESTAMPADO'))
+    with st.expander("Ver detalle Líneas (L1-L4)"):
+        for linea in ['L1', 'L2', 'L3', 'L4']:
+            st.caption(f"Línea {linea}")
+            show_metric_row(get_metrics(linea))
+
+with col_t2:
+    st.markdown("**Total Soldadura**")
+    show_metric_row(get_metrics('SOLDADURA'))
+    with st.expander("Ver detalle (Celda, PRP)"):
+        for sub in ['CELDA', 'PRP']:
+            st.caption(f"Proceso {sub}")
+            show_metric_row(get_metrics(sub))
+
 # 2. AQUI AGREGAMOS EL DESPLEGABLE CON EL GRÁFICO
 with st.expander("📉 Ver Evolución Histórica del OEE (Click aquí)"):
     if not df_oee_f.empty:
@@ -146,35 +176,6 @@ with st.expander("📉 Ver Evolución Histórica del OEE (Click aquí)"):
         st.warning("No hay datos suficientes para mostrar la gráfica.")
 
 st.divider()
-
-def show_metric_row(m):
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("OEE", f"{m['OEE']:.1%}")
-    c2.metric("Disponibilidad", f"{m['DISP']:.1%}")
-    c3.metric("Performance", f"{m['PERF']:.1%}")
-    c4.metric("Calidad", f"{m['CAL']:.1%}")
-
-st.subheader("Planta Total")
-show_metric_row(get_metrics('GENERAL'))
-st.divider()
-
-col_t1, col_t2 = st.tabs(["Estampado", "Soldadura"])
-
-with col_t1:
-    st.markdown("**Total Estampado**")
-    show_metric_row(get_metrics('ESTAMPADO'))
-    with st.expander("Ver detalle Líneas (L1-L4)"):
-        for linea in ['L1', 'L2', 'L3', 'L4']:
-            st.caption(f"Línea {linea}")
-            show_metric_row(get_metrics(linea))
-
-with col_t2:
-    st.markdown("**Total Soldadura**")
-    show_metric_row(get_metrics('SOLDADURA'))
-    with st.expander("Ver detalle (Celda, PRP)"):
-        for sub in ['CELDA', 'PRP']:
-            st.caption(f"Proceso {sub}")
-            show_metric_row(get_metrics(sub))
 
 # ==========================================
 # 6. GRÁFICOS Y TIEMPOS
