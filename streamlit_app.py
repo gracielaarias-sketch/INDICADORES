@@ -1,144 +1,114 @@
+El código que enviaste tiene algunos errores de estructura (como el st.set_page_config en el medio y bloques try/except entrecortados). He consolidado todo en una sola versión limpia, funcional y con todos los filtros (Fecha, Fábrica y Máquina) actuando al mismo tiempo sobre los gráficos y las métricas.
+
+Copia este código íntegro en tu archivo streamlit_app.py:
+
+Python
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-# --- CONFIGURACIÓN Y CARGA DE DATOS ---
+# 1. CONFIGURACIÓN DE LA PÁGINA (Debe ser lo primero)
+st.set_page_config(page_title="Dashboard de Producción", layout="wide")
+
+# 2. CARGA DE DATOS
 url_base = st.secrets["connections"]["gsheets"]["spreadsheet"].strip()
 url_csv = url_base.split("/edit")[0] + "/export?format=csv&gid=0"
 
 @st.cache_data(ttl=300)
 def load_data(url):
     data = pd.read_csv(url)
-    # 1. Limpieza de Tiempo
+    # Limpieza de Tiempo
     if 'Tiempo (Min)' in data.columns:
         data['Tiempo (Min)'] = data['Tiempo (Min)'].astype(str).str.replace(',', '.')
         data['Tiempo (Min)'] = pd.to_numeric(data['Tiempo (Min)'], errors='coerce').fillna(0)
     
-    # 2. Conversión de Fecha (Asegúrate de que la columna se llame 'Fecha')
+    # Conversión de Fecha
     if 'Fecha' in data.columns:
         data['Fecha'] = pd.to_datetime(data['Fecha'], errors='coerce')
     
+    # Limpieza de filas vacías críticas
+    data = data.dropna(subset=['Operador', 'Evento'])
     return data
 
-df_original = load_data(url_csv)
+try:
+    df_raw = load_data(url_csv)
 
-# --- FILTRO POR FECHA EN LA BARRA LATERAL ---
-st.sidebar.header("📅 Filtros de Tiempo")
+    # 3. FILTROS EN LA BARRA LATERAL
+    st.sidebar.header("📅 Filtros de Análisis")
+    
+    # Filtro de Fecha
+    min_fecha = df_raw['Fecha'].min().date()
+    max_fecha = df_raw['Fecha'].max().date()
+    rango_fechas = st.sidebar.date_input("Rango de fechas", [min_fecha, max_fecha])
 
-# Definir rango de fechas basado en los datos
-min_fecha = df_original['Fecha'].min().date()
-max_fecha = df_original['Fecha'].max().date()
+    # Filtros de Fábrica y Máquina
+    fábricas = st.sidebar.multiselect("Fábrica", df_raw['Fábrica'].unique(), default=df_raw['Fábrica'].unique())
+    máquinas = st.sidebar.multiselect("Máquina", df_raw['Máquina'].unique(), default=df_raw['Máquina'].unique())
 
-# Widget de calendario (Rango: Inicio y Fin)
-rango_fechas = st.sidebar.date_input(
-    "Selecciona el rango de fechas:",
-    value=(min_fecha, max_fecha),
-    min_value=min_fecha,
-    max_value=max_fecha
-)
+    # 4. APLICACIÓN DE FILTROS (CASCADA)
+    df_filtrado = df_raw.copy()
+    
+    # Aplicar fecha
+    if isinstance(rango_fechas, list) and len(rango_fechas) == 2:
+        inicio, fin = rango_fechas
+        df_filtrado = df_filtrado[(df_filtrado['Fecha'].dt.date >= inicio) & (df_filtrado['Fecha'].dt.date <= fin)]
+    
+    # Aplicar Fábrica y Máquina
+    df_filtrado = df_filtrado[df_filtrado['Fábrica'].isin(fábricas) & df_filtrado['Máquina'].isin(máquinas)]
 
-# Aplicar el filtro a los datos
-# Verificamos que se hayan seleccionado ambas fechas (inicio y fin)
-if isinstance(rango_fechas, tuple) and len(rango_fechas) == 2:
-    inicio, fin = rango_fechas
-    # Filtrar el DataFrame original
-    df = df_original[(df_original['Fecha'].dt.date >= inicio) & (df_original['Fecha'].dt.date <= fin)]
-else:
-    df = df_original.copy()
+    # 5. TÍTULO Y MÉTRICAS
+    st.title("🏭 Control de Eventos de Planta")
+    
+    # Cálculos basados en el DF filtrado
+    total_eventos = len(df_filtrado)
+    tiempo_prod = df_filtrado[df_filtrado['Evento'].str.contains('Producción', case=False, na=False)]['Tiempo (Min)'].sum()
+    tiempo_fallas = df_filtrado[df_filtrado['Nivel Evento 3'].str.contains('FALLA', case=False, na=False)]['Tiempo (Min)'].sum()
+    
+    prom_smed = df_filtrado[df_filtrado['Nivel Evento 4'].str.contains('SMED', case=False, na=False)]['Tiempo (Min)'].mean()
+    prom_baño = df_filtrado[df_filtrado['Nivel Evento 4'].str.contains('BAÑO', case=False, na=False)]['Tiempo (Min)'].mean()
+    prom_refrigerio = df_filtrado[df_filtrado['Nivel Evento 4'].str.contains('REFRIGERIO', case=False, na=False)]['Tiempo (Min)'].mean()
 
-st.title("📊 Panel de Control de Producción")
-st.caption(f"Mostrando datos desde {rango_fechas[0]} hasta {rango_fechas[1] if len(rango_fechas)>1 else '...'}")
+    # Mostrar Métricas
+    st.subheader("🚀 Totales Generales")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total Eventos", total_eventos)
+    c2.metric("Tiempo Producción", f"{tiempo_prod:,.2f} min")
+    c3.metric("Tiempo Fallas", f"{tiempo_fallas:,.2f} min")
 
-    # 4. Mostrar los datos
-    st.success("¡Datos cargados con éxito!")
-    st.metric("Total de Registros", len(df))
-    st.dataframe(df)
+    st.subheader("⏱️ Promedios de Tiempos (Min)")
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Promedio SMED", f"{0 if pd.isna(prom_smed) else prom_smed:.2f}")
+    m2.metric("Promedio Baño", f"{0 if pd.isna(prom_baño) else prom_baño:.2f}")
+    m3.metric("Promedio Refrigerio", f"{0 if pd.isna(prom_refrigerio) else prom_refrigerio:.2f}")
+
+    st.divider()
+
+    # 6. GRÁFICOS
+    col_g1, col_g2 = st.columns(2)
+
+    with col_g1:
+        st.subheader("⏱️ Tiempo por Tipo de Evento")
+        fig_evento = px.pie(df_filtrado, values='Tiempo (Min)', names='Evento', hole=0.4)
+        st.plotly_chart(fig_evento, use_container_width=True)
+
+    with col_g2:
+        st.subheader("👤 Tiempo por Operador")
+        fig_operador = px.bar(df_filtrado, x='Operador', y='Tiempo (Min)', color='Evento', barmode='group')
+        st.plotly_chart(fig_operador, use_container_width=True)
+
+    # 7. DETALLE DE PARADAS
+    st.subheader("🚫 Análisis de Causas de Parada")
+    df_paradas = df_filtrado[df_filtrado['Evento'] == 'Parada']
+    if not df_paradas.empty:
+        fig_parada = px.bar(df_paradas, x='Nivel Evento 3', y='Tiempo (Min)', color='Máquina')
+        st.plotly_chart(fig_parada, use_container_width=True)
+    else:
+        st.info("No hay paradas en el rango seleccionado.")
+
+    # 8. TABLA DE DATOS
+    with st.expander("📂 Ver registros detallados"):
+        st.dataframe(df_filtrado)
 
 except Exception as e:
-    st.error(f"Error al cargar los datos: {e}")
-    st.info("Asegúrate de que la URL en Secrets sea la correcta y que la hoja sea pública (Cualquier persona con el enlace puede ver).")
-
-# Configuración inicial
-st.set_page_config(page_title="Dashboard de Producción", layout="wide")
-st.title("🏭 Control de Eventos de Planta")
-
-# Limpieza de datos (basado en tu estructura)
-df = df.dropna(subset=['Operador', 'Evento'])
-# Convertimos el tiempo a numérico por si acaso
-df['Tiempo (Min)'] = pd.to_numeric(df['Tiempo (Min)'].str.replace(',', '.'), errors='coerce')
-
-# --- FILTROS LATERALES ---
-st.sidebar.header("Filtros de Análisis")
-fábrica = st.sidebar.multiselect("Fábrica", df['Fábrica'].unique(), default=df['Fábrica'].unique())
-máquina = st.sidebar.multiselect("Máquina", df['Máquina'].unique(), default=df['Máquina'].unique())
-
-df_filtrado = df[(df['Fábrica'].isin(fábrica)) & (df['Máquina'].isin(máquina))]
-
-# --- MÉTRICAS PRINCIPALES ---
-# Buscamos "Producción" en la columna 'Evento' (o 'Nivel Evento 3' según tu hoja)
-tiempo_produccion = df[df['Evento'].str.contains('Producción', case=False, na=False)]['Tiempo (Min)'].sum()
-
-# Filtramos donde la columna Nivel Evento 3 contenga la palabra "FALLA"
-tiempo_fallas = df[df['Nivel Evento 3'].str.contains('FALLA', case=False, na=False)]['Tiempo (Min)'].sum()
-
-# 3. Promedio SMED
-promedio_smed = df[df['Nivel Evento 4'].str.contains('SMED', case=False, na=False)]['Tiempo (Min)'].mean()
-
-# 4. Promedio Baño
-promedio_baño = df[df['Nivel Evento 4'].str.contains('BAÑO', case=False, na=False)]['Tiempo (Min)'].mean()
-
-# 5. Promedio Refrigerio
-promedio_refrigerio = df[df['Nivel Evento 4'].str.contains('REFRIGERIO', case=False, na=False)]['Tiempo (Min)'].mean()
-
-# --- MOSTRAR MÉTRICAS ---
-
-# Primera fila: Totales
-col1, col2 = st.columns(2)
-with col1:
-   st.metric("Total Tiempo Producción", f"{tiempo_produccion:,.2f} min")
-with col2:
-    st.metric("Total Tiempo Fallas", f"{tiempo_fallas:,.2f} min")
-
-st.markdown("---")
-
-# Segunda fila: Promedios
-st.subheader("⏱️ Promedios de Tiempo")
-m1, m2, m3 = st.columns(3)
-
-# Usamos fillna(0) por si no hay registros de ese tipo aún
-m1.metric("Promedio SMED", f"{0 if pd.isna(promedio_smed) else promedio_smed:.2f} min")
-m2.metric("Promedio Baño", f"{0 if pd.isna(promedio_baño) else promedio_baño:.2f} min")
-m3.metric("Promedio Refrigerio", f"{0 if pd.isna(promedio_refrigerio) else promedio_refrigerio:.2f} min")
-
-st.divider()
-
-# --- GRÁFICOS ---
-col1, col2 = st.columns(2)
-
-with col1:
-    st.subheader("⏱️ Tiempo por Tipo de Evento")
-    # Gráfico que muestra cuánto tiempo se pierde en 'Parada' vs 'Producción'
-    fig_evento = px.pie(df_filtrado, values='Tiempo (Min)', names='Evento', 
-                         hole=0.4, color_discrete_sequence=px.colors.qualitative.Safe)
-    st.plotly_chart(fig_evento, use_container_width=True)
-
-with col2:
-    st.subheader("👤 Rendimiento por Operador")
-    # Gráfico de barras comparando el tiempo total por operador
-    fig_operador = px.bar(df_filtrado, x='Operador', y='Tiempo (Min)', color='Evento',
-                          title="Distribución de Tiempo por Operador", barmode='group')
-    st.plotly_chart(fig_operador, use_container_width=True)
-
-# --- DETALLE DE PARADAS ---
-st.subheader("🚫 Análisis de Causas de Parada")
-df_paradas = df_filtrado[df_filtrado['Evento'] == 'Parada']
-if not df_paradas.empty:
-    fig_parada = px.bar(df_paradas, x='Nivel Evento 3', y='Tiempo (Min)', 
-                         color='Máquina', title="Tiempo Perdido por Motivo de Parada")
-    st.plotly_chart(fig_parada, use_container_width=True)
-else:
-    st.info("No hay eventos de parada en la selección actual.")
-
-# Mostrar tabla original
-with st.expander("Ver registros detallados"):
-    st.dataframe(df_filtrado)
+    st.error(f"Error crítico: {e}")
