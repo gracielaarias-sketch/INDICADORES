@@ -11,7 +11,7 @@ try:
     
     # GID 0: Hoja de registros / GID OEE: Reemplaza con el de tu pestaña OEE
     gid_datos = "0"
-    gid_oee = "1133129596"  # <--- CAMBIA ESTE NÚMERO POR EL GID DE TU PESTAÑA OEE
+    gid_oee = "1767654796"  # <--- CAMBIA ESTE NÚMERO POR EL GID DE TU PESTAÑA OEE
     
     url_csv_datos = url_base.split("/edit")[0] + f"/export?format=csv&gid={gid_datos}"
     url_csv_oee = url_base.split("/edit")[0] + f"/export?format=csv&gid={gid_oee}"
