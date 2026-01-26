@@ -1,20 +1,33 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from streamlit_gsheets import GSheetsConnection
 
+# 1. Obtenemos la URL de los Secrets
+try:
+    url_base = st.secrets["connections"]["gsheets"]["spreadsheet"].strip()
+    
+    # 2. Convertimos la URL normal en una URL de descarga directa de CSV
+    # Esto reemplaza el final de la URL automáticamente
+    if "/edit" in url_base:
+        url_csv = url_base.split("/edit")[0] + "/export?format=csv&gid=0"
+    else:
+        url_csv = url_base
 
-# Crear la conexión
-conn = st.connection("gsheets", type=GSheetsConnection)
+    # 3. Leer los datos con Pandas
+    @st.cache_data(ttl=300) # Se actualiza cada 5 minutos
+    def load_data(url):
+        return pd.read_csv(url)
 
-# Limpiamos la URL de cualquier carácter invisible antes de usarla
-url_directa = st.secrets["connections"]["gsheets"]["spreadsheet"].strip()
+    df = load_data(url_csv)
 
-# Leer los datos usando la URL limpia
-df = conn.read(spreadsheet=url_directa, ttl="5m", gid=0)
+    # 4. Mostrar los datos
+    st.success("¡Datos cargados con éxito!")
+    st.metric("Total de Registros", len(df))
+    st.dataframe(df)
 
-st.write("¡Datos cargados correctamente!")
-st.dataframe(df.head())
+except Exception as e:
+    st.error(f"Error al cargar los datos: {e}")
+    st.info("Asegúrate de que la URL en Secrets sea la correcta y que la hoja sea pública (Cualquier persona con el enlace puede ver).")
 
 # Configuración inicial
 st.set_page_config(page_title="Dashboard de Producción", layout="wide")
