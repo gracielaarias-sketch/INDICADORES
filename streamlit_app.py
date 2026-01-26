@@ -3,9 +3,9 @@ import pandas as pd
 import plotly.express as px
 
 # 1. CONFIGURACIÓN DE LA PÁGINA
-st.set_page_config(page_title="Auditoría OEE y Producción", layout="wide")
+st.set_page_config(page_title="Auditoría Integral de Planta", layout="wide")
 
-# 2. CARGA DE DATOS ROBUSTA DESDE PANDAS
+# 2. CARGA DE DATOS ROBUSTA DESDE PANDAS (Doble Hoja)
 try:
     url_base = st.secrets["connections"]["gsheets"]["spreadsheet"].strip()
     
@@ -25,22 +25,27 @@ try:
             df['Fecha_DT'] = pd.to_datetime(df[col_fecha], dayfirst=True, errors='coerce')
             df['Fecha_Filtro'] = df['Fecha_DT'].dt.normalize()
         
-        # Limpieza inicial de nulos y strings
+        # Limpieza de valores porcentuales y comas para todas las columnas numéricas
         for col in df.columns:
             if df[col].dtype == 'object':
-                df[col] = df[col].astype(str).replace(['nan', 'None', 'NaN'], '').fillna('')
+                # Reemplazamos % y cambiamos coma por punto para que Pandas lo entienda como número
+                df[col] = df[col].astype(str).str.replace('%', '').str.replace(',', '.')
         return df
 
     df_raw = load_pandas_df(url_csv_datos)
     df_oee_raw = load_pandas_df(url_csv_oee)
 
-    # 3. FILTROS EN LA BARRA LATERAL (RESTAURADOS)
+    # 3. FILTROS EN LA BARRA LATERAL
     st.sidebar.header("📅 Rango de Auditoría")
     min_d = df_raw['Fecha_Filtro'].min().date()
     max_d = df_raw['Fecha_Filtro'].max().date()
     rango = st.sidebar.date_input("Periodo", [min_d, max_d], key="audit_range")
 
     st.sidebar.header("⚙️ Filtros de Planta")
+    # Limpiamos nans para los filtros
+    df_raw['Fábrica'] = df_raw['Fábrica'].fillna('Sin Especificar')
+    df_raw['Máquina'] = df_raw['Máquina'].fillna('Sin Especificar')
+    
     opciones_fabrica = sorted(df_raw['Fábrica'].unique())
     fábricas = st.sidebar.multiselect("Fábrica", opciones_fabrica, default=opciones_fabrica)
 
@@ -50,45 +55,49 @@ try:
     # 4. APLICACIÓN DE FILTROS ROBUSTOS
     if isinstance(rango, (list, tuple)) and len(rango) == 2:
         ini, fin = pd.to_datetime(rango[0]), pd.to_datetime(rango[1])
-        # Filtrado para Registros
         df_f = df_raw[(df_raw['Fecha_Filtro'] >= ini) & (df_raw['Fecha_Filtro'] <= fin)]
         df_f = df_f[df_f['Fábrica'].isin(fábricas) & df_f['Máquina'].isin(máquinas)]
-        
-        # Filtrado para OEE (Solo por fecha para no perder los totales de Soldadura/Estampado)
         df_oee_f = df_oee_raw[(df_oee_raw['Fecha_Filtro'] >= ini) & (df_oee_raw['Fecha_Filtro'] <= fin)]
     else:
         st.stop()
 
-    # 5. VISUALIZACIÓN DE VALORES OEE
-    st.title("🏭 Auditoría de Planta: OEE y Registros")
+    # 5. VISUALIZACIÓN DE VALORES OEE DETALLADOS
+    st.title("🏭 Auditoría de Planta: OEE & Disponibilidad")
     
     if not df_oee_f.empty:
-        st.subheader("🎯 Valores OEE Directos (Hoja OEE)")
-        o1, o2, o3 = st.columns(3)
-        
-        def get_oee_val(filtro_nombre):
-            # Limpiamos el texto de la columna OEE para que sea numérico
-            mask = df_oee_f.apply(lambda row: row.astype(str).str.upper().str.contains(filtro_nombre.upper()).any(), axis=1)
-            datos_area = df_oee_f[mask]
-            if not datos_area.empty and 'OEE' in df_oee_f.columns:
-                # Convertir a número quitando % y manejando comas
-                val_limpio = datos_area['OEE'].astype(str).str.replace('%', '').str.replace(',', '.')
-                val = pd.to_numeric(val_limpio, errors='coerce').mean()
-                return val / 100 if val > 1 else val
-            return 0
+        # Función para extraer métricas por área
+        def get_area_metrics(area_name):
+            mask = df_oee_f.apply(lambda row: row.astype(str).str.upper().str.contains(area_name.upper()).any(), axis=1)
+            datos = df_oee_f[mask]
+            metrics = {'OEE': 0, 'DISP': 0, 'PERF': 0, 'CAL': 0}
+            
+            if not datos.empty:
+                for key, col in zip(['OEE', 'DISP', 'PERF', 'CAL'], ['OEE', 'Disponibilidad', 'Performance', 'Calidad']):
+                    # Buscamos la columna que contenga el nombre (flexibilidad por si cambia el nombre en Excel)
+                    actual_col = next((c for c in datos.columns if col.lower() in c.lower()), None)
+                    if actual_col:
+                        val = pd.to_numeric(datos[actual_col], errors='coerce').mean()
+                        metrics[key] = val / 100 if val > 1 else val
+            return metrics
 
-        o1.metric("OEE SOLDADURA", f"{get_oee_val('SOLDADURA'):.1%}")
-        o2.metric("OEE ESTAMPADO", f"{get_oee_val('ESTAMPADO'):.1%}")
-        o3.metric("OEE GENERAL", f"{get_oee_val('GENERAL'):.1%}")
+        # Presentación por Áreas
+        areas = [('GENERAL', 'Planta Total'), ('SOLDADURA', 'Área Soldadura'), ('ESTAMPADO', 'Área Estampado')]
+        
+        for area_key, area_label in areas:
+            st.markdown(f"### 🎯 Indicadores: {area_label}")
+            m = get_area_metrics(area_key)
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("OEE", f"{m['OEE']:.1%}")
+            c2.metric("Disponibilidad", f"{m['DISP']:.1%}")
+            c3.metric("Performance", f"{m['PERF']:.1%}")
+            c4.metric("Calidad", f"{m['CAL']:.1%}")
         st.divider()
 
-    # 6. SECCIÓN DE GRÁFICOS DE REGISTROS (MANTENIENDO EL ORDEN)
+    # 6. SECCIÓN DE GRÁFICOS DE REGISTROS
     if not df_f.empty:
-        # Fila 1: Distribución y Operadores
         g1, g2 = st.columns(2)
         with g1:
-            # Asegurar que Tiempo sea numérico para el gráfico
-            df_f['Tiempo (Min)'] = pd.to_numeric(df_f['Tiempo (Min)'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
+            df_f['Tiempo (Min)'] = pd.to_numeric(df_f['Tiempo (Min)'], errors='coerce').fillna(0)
             st.plotly_chart(px.pie(df_f, values='Tiempo (Min)', names='Evento', title="Distribución de Tiempo", hole=0.4), use_container_width=True)
         with g2:
             st.plotly_chart(px.bar(df_f, x='Operador', y='Tiempo (Min)', color='Evento', title="Tiempos por Operador", barmode='group'), use_container_width=True)
