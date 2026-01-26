@@ -177,8 +177,7 @@ try:
 
 # 🆕 INFORME        
 
-st.subheader("📋 Registro de Eventos")
-
+ st.divider()
 with st.expander("📂 Ver registros detallados ", expanded=True):
     if not df_f.empty:
         # 1. Crear copia para no afectar los gráficos
