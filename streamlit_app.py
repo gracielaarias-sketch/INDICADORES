@@ -175,5 +175,12 @@ try:
             pivot_hm = df_hm.groupby(['Máquina', col_6])['Tiempo (Min)'].sum().reset_index()
             st.plotly_chart(px.density_heatmap(pivot_hm, x=col_6, y="Máquina", z="Tiempo (Min)", color_continuous_scale="Viridis", text_auto=True), use_container_width=True)
 
+# 🆕 INFORME        
+
+        with st.expander("📂 Ver registros detallados"):
+            df_display = df_f.sort_values(by=['Fecha_Filtro', 'Fecha_DT'])
+            cols_v = ['Fecha_Filtro', 'Hora_Txt', 'Operador', 'Evento', 'Máquina', 'Tiempo (Min)', 'Nivel Evento 4', col_6]
+            st.dataframe(df_display[[c for c in cols_v if c in df_display.columns]], use_container_width=True)
+
 except Exception as e:
     st.error(f"Error crítico: {e}")
