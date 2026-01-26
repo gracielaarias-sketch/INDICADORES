@@ -102,7 +102,7 @@ try:
         st.plotly_chart(fig_operador, use_container_width=True)
 
     # 7. ANÁLISIS DE PARADAS
-    st.subheader("🚫 Detalle de Motivos de Parada")
+    st.subheader("🚫 Distribucion de las paradas")
     df_paradas = df_filtrado[df_filtrado['Evento'].str.contains('Parada', case=False, na=False)]
     if not df_paradas.empty:
         fig_parada = px.bar(df_paradas, x='Nivel Evento 3', y='Tiempo (Min)', color='Máquina')
