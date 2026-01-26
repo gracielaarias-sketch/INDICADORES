@@ -2,23 +2,52 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-# 1. Obtenemos la URL de los Secrets
-try:
-    url_base = st.secrets["connections"]["gsheets"]["spreadsheet"].strip()
+# --- CONFIGURACIÓN Y CARGA DE DATOS ---
+url_base = st.secrets["connections"]["gsheets"]["spreadsheet"].strip()
+url_csv = url_base.split("/edit")[0] + "/export?format=csv&gid=0"
+
+@st.cache_data(ttl=300)
+def load_data(url):
+    data = pd.read_csv(url)
+    # 1. Limpieza de Tiempo
+    if 'Tiempo (Min)' in data.columns:
+        data['Tiempo (Min)'] = data['Tiempo (Min)'].astype(str).str.replace(',', '.')
+        data['Tiempo (Min)'] = pd.to_numeric(data['Tiempo (Min)'], errors='coerce').fillna(0)
     
-    # 2. Convertimos la URL normal en una URL de descarga directa de CSV
-    # Esto reemplaza el final de la URL automáticamente
-    if "/edit" in url_base:
-        url_csv = url_base.split("/edit")[0] + "/export?format=csv&gid=0"
-    else:
-        url_csv = url_base
+    # 2. Conversión de Fecha (Asegúrate de que la columna se llame 'Fecha')
+    if 'Fecha' in data.columns:
+        data['Fecha'] = pd.to_datetime(data['Fecha'], errors='coerce')
+    
+    return data
 
-    # 3. Leer los datos con Pandas
-    @st.cache_data(ttl=300) # Se actualiza cada 5 minutos
-    def load_data(url):
-        return pd.read_csv(url)
+df_original = load_data(url_csv)
 
-    df = load_data(url_csv)
+# --- FILTRO POR FECHA EN LA BARRA LATERAL ---
+st.sidebar.header("📅 Filtros de Tiempo")
+
+# Definir rango de fechas basado en los datos
+min_fecha = df_original['Fecha'].min().date()
+max_fecha = df_original['Fecha'].max().date()
+
+# Widget de calendario (Rango: Inicio y Fin)
+rango_fechas = st.sidebar.date_input(
+    "Selecciona el rango de fechas:",
+    value=(min_fecha, max_fecha),
+    min_value=min_fecha,
+    max_value=max_fecha
+)
+
+# Aplicar el filtro a los datos
+# Verificamos que se hayan seleccionado ambas fechas (inicio y fin)
+if isinstance(rango_fechas, tuple) and len(rango_fechas) == 2:
+    inicio, fin = rango_fechas
+    # Filtrar el DataFrame original
+    df = df_original[(df_original['Fecha'].dt.date >= inicio) & (df_original['Fecha'].dt.date <= fin)]
+else:
+    df = df_original.copy()
+
+st.title("📊 Panel de Control de Producción")
+st.caption(f"Mostrando datos desde {rango_fechas[0]} hasta {rango_fechas[1] if len(rango_fechas)>1 else '...'}")
 
     # 4. Mostrar los datos
     st.success("¡Datos cargados con éxito!")
