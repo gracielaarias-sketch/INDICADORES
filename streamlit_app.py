@@ -46,10 +46,9 @@ máquina = st.sidebar.multiselect("Máquina", df['Máquina'].unique(), default=d
 df_filtrado = df[(df['Fábrica'].isin(fábrica)) & (df['Máquina'].isin(máquina))]
 
 # --- MÉTRICAS PRINCIPALES ---
-# 1. Total Eventos
-total_eventos = len(df)
+# Buscamos "Producción" en la columna 'Evento' (o 'Nivel Evento 3' según tu hoja)
+tiempo_produccion = df[df['Evento'].str.contains('Producción', case=False, na=False)]['Tiempo (Min)'].sum()
 
-# 2. Total Tiempo de Fallas (Suma de minutos)
 # Filtramos donde la columna Nivel Evento 3 contenga la palabra "FALLA"
 tiempo_fallas = df[df['Nivel Evento 3'].str.contains('FALLA', case=False, na=False)]['Tiempo (Min)'].sum()
 
