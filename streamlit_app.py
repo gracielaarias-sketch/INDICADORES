@@ -71,7 +71,7 @@ def load_data():
             for c_txt in cols_texto:
                 matches = [col for col in df.columns if c_txt.lower() in col.lower()]
                 for match in matches:
-                    df[match] = df[match].fillna('').astype(str) # Rellenamos con vacio para que se vea limpio
+                    df[match] = df[match].fillna('').astype(str)
             return df
 
         df1 = process_df(base_export + gid_datos)
@@ -199,7 +199,7 @@ with t2:
 # 5. GRÁFICO HISTÓRICO OEE (DESPLEGABLE)
 # ==========================================
 st.markdown("---")
-with st.expander("📉 Ver Gráfico de Evolución Histórica OEE ", expanded=False):
+with st.expander("📉 Ver Gráfico de Evolución Histórica OEE", expanded=False):
     if not df_oee_f.empty and 'OEE' in df_oee_f.columns:
         df_trend = df_oee_f.copy()
         if df_trend['OEE'].dtype == 'object':
@@ -343,35 +343,44 @@ with st.expander("📂 Ver Registro Detallado de Eventos", expanded=True):
         # Copia para no alterar el original
         df_show = df_f.copy()
 
+        # Creamos columna de Fecha texto si no existe (usamos la columna Fecha_DT)
+        if 'Fecha_DT' in df_show.columns:
+             df_show['Fecha_Txt'] = df_show['Fecha_DT'].dt.strftime('%d-%m-%Y')
+        else:
+             df_show['Fecha_Txt'] = 'N/A'
+
         # Mapa de columnas deseadas vs nombres reales en DataFrame
-        # Ajusta la derecha (valor) si tu Excel tiene nombres ligeramente distintos
-        columnas_deseadas = {
+        columnas_mapeo = {
+            'Fecha_Txt': 'Fecha',             # Nueva columna creada arriba
             'Máquina': 'Máquina',
             'Hora Inicio': 'Hora Inicio',
             'Hora Fin': 'Hora Fin',
-            'Tiempo (Min)': 'Tiempo Total (min)', # Renombramos para visualización
-            'Evento': 'Detalle Evento',           # Producción o Parada
-            'Nivel Evento 6': 'Tipo/Detalle Parada', # El detalle específico
-            'Operador': 'Operario'
+            'Tiempo (Min)': 'Tiempo (min)',
+            'Evento': 'Evento',
+            'Nivel Evento 6': 'Detalle Falla',
+            'Operador': 'Operador'
         }
 
-        # Filtramos solo las columnas que existen en el DF para evitar errores
-        cols_existentes = [c for c in columnas_deseadas.keys() if c in df_show.columns]
+        # Filtramos solo las que existen
+        cols_finales = [c for c in columnas_mapeo.keys() if c in df_show.columns]
         
         # Seleccionamos y renombramos
-        df_final = df_show[cols_existentes].rename(columns=columnas_deseadas)
+        df_final = df_show[cols_finales].rename(columns=columnas_mapeo)
 
-        # Ordenar (opcional, por Hora Inicio si existe)
-        if 'Hora Inicio' in df_final.columns:
-             # Intento simple de ordenar, asumiendo que es string HH:MM
-             df_final = df_final.sort_values(by='Hora Inicio', ascending=True)
+        # Ordenar por Máquina primero, luego por Hora Inicio
+        if 'Máquina' in df_final.columns:
+            sort_cols = ['Máquina']
+            if 'Hora Inicio' in df_final.columns:
+                sort_cols.append('Hora Inicio')
+            
+            df_final = df_final.sort_values(by=sort_cols, ascending=True)
 
         st.dataframe(
             df_final, 
             use_container_width=True, 
             hide_index=True,
             column_config={
-                "Tiempo Total (min)": st.column_config.NumberColumn("Tiempo Total", format="%.0f min")
+                "Tiempo (min)": st.column_config.NumberColumn("Tiempo (min)", format="%.0f min")
             }
         )
     else:
