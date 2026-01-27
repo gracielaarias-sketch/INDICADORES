@@ -1,8 +1,3 @@
-Perfecto. He modificado la Sección 8 (Tabla Detallada) para que filtre y muestre exclusivamente las columnas que has pedido: Máquina, Hora Inicio, Hora Fin, Tiempo Total, Evento (Producción/Parada), Detalle (Falla) y Operario.
-
-Aquí tienes el código completo actualizado. Solo tienes que copiar y reemplazar todo en tu app.py.
-
-Python
 import streamlit as st
 import pandas as pd
 import plotly.express as px
