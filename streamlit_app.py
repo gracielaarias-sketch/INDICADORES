@@ -1,14 +1,3 @@
-He corregido los errores de sintaxis que tenía el código que enviaste.
-
-Principales correcciones realizadas:
-
-Sección 5 (Histórico): Faltaba la indentación (sangría) dentro del st.expander. Python requiere que el código dentro de un bloque with esté indentado.
-
-Sección 6 (Producción): Había un error grave de paréntesis. El bloque del gráfico (with st.expander...) estaba metido dentro de la función st.dataframe, lo cual rompía el código. He cerrado correctamente la tabla y colocado el gráfico después.
-
-Aquí tienes el código completo y funcional:
-
-Python
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -32,7 +21,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. CARGA DE DATOS ROBUSTA (3 FUENTES)
+# 2. CARGA DE DATOS ROBUSTA
 # ==========================================
 @st.cache_data(ttl=300)
 def load_data():
@@ -44,7 +33,7 @@ def load_data():
             return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
         # ---------------------------------------------------------
-        # 🟢 CONFIGURACIÓN DE GIDs (IDs de las pestañas)
+        # 🟢 CONFIGURACIÓN DE GIDs
         # ---------------------------------------------------------
         gid_datos = "0"             # Datos crudos de paros
         gid_oee = "1767654796"      # Datos de OEE
@@ -53,17 +42,13 @@ def load_data():
 
         base_export = url_base.split("/edit")[0] + "/export?format=csv&gid="
         
-        url_csv_datos = base_export + gid_datos
-        url_csv_oee = base_export + gid_oee
-        url_csv_prod = base_export + gid_prod
-
         def process_df(url):
             try:
                 df = pd.read_csv(url)
             except Exception:
                 return pd.DataFrame()
             
-            # Limpieza General de columnas numéricas
+            # Limpieza Numérica
             cols_num = [
                 'Tiempo (Min)', 'Cantidad', 'Piezas', 'Produccion', 'Total',
                 'Buenas', 'Retrabajo', 'Observadas', 'Tiempo de Ciclo', 'Ciclo'
@@ -74,26 +59,24 @@ def load_data():
                     df[match] = df[match].astype(str).str.replace(',', '.')
                     df[match] = pd.to_numeric(df[match], errors='coerce').fillna(0.0)
             
-            # Limpieza de Fechas
+            # Limpieza Fechas
             col_fecha = next((c for c in df.columns if 'fecha' in c.lower()), None)
             if col_fecha:
                 df['Fecha_DT'] = pd.to_datetime(df[col_fecha], dayfirst=True, errors='coerce')
                 df['Fecha_Filtro'] = df['Fecha_DT'].dt.normalize()
                 df = df.dropna(subset=['Fecha_Filtro'])
             
-            # Rellenar textos nulos
+            # Rellenar Textos
             cols_texto = ['Fábrica', 'Máquina', 'Evento', 'Código', 'Producto', 'Referencia', 'Nivel Evento 3', 'Nivel Evento 6']
             for c_txt in cols_texto:
                 matches = [col for col in df.columns if c_txt.lower() in col.lower()]
                 for match in matches:
                     df[match] = df[match].fillna('Sin Especificar').astype(str)
-            
             return df
 
-        # Procesamos los 3 DataFrames
-        df1 = process_df(url_csv_datos)
-        df2 = process_df(url_csv_oee)
-        df3 = process_df(url_csv_prod)
+        df1 = process_df(base_export + gid_datos)
+        df2 = process_df(base_export + gid_oee)
+        df3 = process_df(base_export + gid_prod)
         
         return df1, df2, df3
 
@@ -101,7 +84,6 @@ def load_data():
         st.error(f"Error cargando datos: {e}")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-# Carga inicial
 df_raw, df_oee_raw, df_prod_raw = load_data()
 
 # ==========================================
@@ -131,17 +113,17 @@ máquinas = st.sidebar.multiselect("Máquina", opciones_maquina, default=opcione
 if isinstance(rango, (list, tuple)) and len(rango) == 2:
     ini, fin = pd.to_datetime(rango[0]), pd.to_datetime(rango[1])
     
-    # 1. Datos Paros
+    # 1. Paros
     df_f = df_raw[(df_raw['Fecha_Filtro'] >= ini) & (df_raw['Fecha_Filtro'] <= fin)]
     df_f = df_f[df_f['Fábrica'].isin(fábricas) & df_f['Máquina'].isin(máquinas)]
     
-    # 2. Datos OEE
+    # 2. OEE
     if not df_oee_raw.empty and 'Fecha_Filtro' in df_oee_raw.columns:
         df_oee_f = df_oee_raw[(df_oee_raw['Fecha_Filtro'] >= ini) & (df_oee_raw['Fecha_Filtro'] <= fin)]
     else:
         df_oee_f = df_oee_raw
         
-    # 3. Datos Producción
+    # 3. Producción
     if not df_prod_raw.empty and 'Fecha_Filtro' in df_prod_raw.columns:
         df_prod_f = df_prod_raw[(df_prod_raw['Fecha_Filtro'] >= ini) & (df_prod_raw['Fecha_Filtro'] <= fin)]
         col_maq_prod = next((c for c in df_prod_f.columns if 'máquina' in c.lower() or 'maquina' in c.lower()), None)
@@ -214,10 +196,12 @@ with t2:
             show_metric_row(get_metrics('PRP'))
 
 # ==========================================
-# 5. SEPARADOR Y GRÁFICO HISTÓRICO
+# 5. GRÁFICO HISTÓRICO OEE (DESPLEGABLE)
 # ==========================================
 st.markdown("---")
-with st.expander("📉 Evolución Histórica OEE", expanded=False):
+
+# 🔽 AQUI ESTA EL DESPLEGABLE DE OEE QUE PEDISTE 🔽
+with st.expander("📉 Ver Gráfico de Evolución Histórica OEE (Click para abrir)", expanded=False):
     if not df_oee_f.empty and 'OEE' in df_oee_f.columns:
         df_trend = df_oee_f.copy()
         if df_trend['OEE'].dtype == 'object':
@@ -235,13 +219,12 @@ with st.expander("📉 Evolución Histórica OEE", expanded=False):
         st.info("No hay datos históricos para graficar.")
 
 # ==========================================
-# 6. SECCIÓN PRODUCCIÓN DETALLADA
+# 6. SECCIÓN PRODUCCIÓN (CON BARRAS DESPLEGABLES)
 # ==========================================
 st.markdown("---")
 st.header("Producción")
 
 if not df_prod_f.empty:
-    # 1. Identificar columnas específicas solicitadas
     col_maq = next((c for c in df_prod_f.columns if 'máquina' in c.lower() or 'maquina' in c.lower()), None)
     col_cod = next((c for c in df_prod_f.columns if any(x in c.lower() for x in ['código', 'codigo', 'producto'])), None)
     col_buenas = next((c for c in df_prod_f.columns if 'buenas' in c.lower()), None)
@@ -249,10 +232,8 @@ if not df_prod_f.empty:
     col_observadas = next((c for c in df_prod_f.columns if 'observadas' in c.lower()), None)
     col_ciclo = next((c for c in df_prod_f.columns if 'ciclo' in c.lower()), None)
 
-    # Validar que existan las columnas clave (Maquina y Codigo al menos)
     if col_maq and col_cod:
         
-        # Agrupar datos (Sumar cantidades, Promediar Ciclos)
         agg_dict = {}
         if col_buenas: agg_dict[col_buenas] = 'sum'
         if col_retrabajo: agg_dict[col_retrabajo] = 'sum'
@@ -262,33 +243,12 @@ if not df_prod_f.empty:
         if agg_dict:
             df_grouped = df_prod_f.groupby([col_maq, col_cod]).agg(agg_dict).reset_index()
             
-            # KPI Total
+            # KPI Total (Visible)
             total_buenas = df_grouped[col_buenas].sum() if col_buenas else 0
             st.metric("Total Piezas Buenas", f"{total_buenas:,.0f}")
 
-            # TABLA DETALLADA
-            st.subheader("Detalle por Código")
-            
-            cols_finales = [col_maq, col_cod]
-            if col_buenas: cols_finales.append(col_buenas)
-            if col_retrabajo: cols_finales.append(col_retrabajo)
-            if col_observadas: cols_finales.append(col_observadas)
-            if col_ciclo: cols_finales.append(col_ciclo)
-            
-            st.dataframe(
-                df_grouped[cols_finales],
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    col_ciclo: st.column_config.NumberColumn("Tiempo Ciclo (s)", format="%.1f s"),
-                    col_buenas: st.column_config.NumberColumn("Buenas", format="%d"),
-                    col_retrabajo: st.column_config.NumberColumn("Retrabajo", format="%d"),
-                    col_observadas: st.column_config.NumberColumn("Observadas", format="%d"),
-                }
-            )
-
-            # GRÁFICO APILADO (Dentro de Expander)
-            with st.expander("📉 Acumulado de produccion por maquina", expanded=False):
+            # 🔽 AQUI ESTA EL DESPLEGABLE DE BARRAS DE PRODUCCION QUE PEDISTE 🔽
+            with st.expander("📊 Ver Gráfico de Barras de Producción (Click para abrir)", expanded=False):
                 cols_grafico = [c for c in [col_buenas, col_retrabajo, col_observadas] if c is not None]
                 if cols_grafico:
                     df_melt = df_grouped.melt(id_vars=[col_maq, col_cod], value_vars=cols_grafico, var_name='Tipo', value_name='Cantidad')
@@ -304,13 +264,35 @@ if not df_prod_f.empty:
                         text_auto='.2s'
                     )
                     st.plotly_chart(fig_prod, use_container_width=True)
+                else:
+                    st.warning("No hay columnas numéricas (Buenas/Retrabajo) para graficar.")
+
+            # Tabla Detallada (También en desplegable para mantener limpieza)
+            with st.expander("📋 Ver Tabla Detallada por Código"):
+                cols_finales = [col_maq, col_cod]
+                if col_buenas: cols_finales.append(col_buenas)
+                if col_retrabajo: cols_finales.append(col_retrabajo)
+                if col_observadas: cols_finales.append(col_observadas)
+                if col_ciclo: cols_finales.append(col_ciclo)
+                
+                st.dataframe(
+                    df_grouped[cols_finales],
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        col_ciclo: st.column_config.NumberColumn("Tiempo Ciclo (s)", format="%.1f s"),
+                        col_buenas: st.column_config.NumberColumn("Buenas", format="%d"),
+                        col_retrabajo: st.column_config.NumberColumn("Retrabajo", format="%d"),
+                        col_observadas: st.column_config.NumberColumn("Observadas", format="%d"),
+                    }
+                )
 
         else:
-            st.warning("Se encontraron Máquina y Código, pero no las columnas de métricas (Buenas, Retrabajo, etc).")
+            st.warning("Se encontraron Máquina y Código, pero no las columnas de métricas.")
     else:
-        st.warning(f"No se detectaron las columnas 'Máquina' y 'Código' en la hoja. Columnas disp: {list(df_prod_f.columns)}")
+        st.warning(f"No se detectaron las columnas 'Máquina' y 'Código'.")
 else:
-    st.info("No hay datos de producción disponibles para este periodo.")
+    st.info("No hay datos de producción disponibles.")
 
 # ==========================================
 # 7. ANÁLISIS DE TIEMPOS Y PAROS
@@ -319,7 +301,6 @@ st.markdown("---")
 st.header("⏱️ Análisis de Tiempos y Paros")
 
 if not df_f.empty:
-    # --- KPIs ---
     t_prod = df_f[df_f['Evento'].astype(str).str.contains('Producción', case=False)]['Tiempo (Min)'].sum()
     t_fallas = df_f[df_f['Nivel Evento 3'].astype(str).str.contains('FALLA', case=False)]['Tiempo (Min)'].sum()
     
@@ -328,7 +309,6 @@ if not df_f.empty:
     c2.metric("Minutos Fallas", f"{t_fallas:,.0f}", delta_color="inverse")
     c3.metric("Total Eventos", len(df_f))
 
-    # --- Gráficos Pie y Operador ---
     g1, g2 = st.columns(2)
     with g1:
         st.plotly_chart(px.pie(df_f, values='Tiempo (Min)', names='Evento', title="Distribución de Tiempo", hole=0.4), use_container_width=True)
@@ -336,9 +316,7 @@ if not df_f.empty:
         if 'Operador' in df_f.columns:
              st.plotly_chart(px.bar(df_f, x='Operador', y='Tiempo (Min)', color='Evento', title="Tiempos por Operador"), use_container_width=True)
 
-    # ----------------------------------------------------
-    # GRÁFICOS DETALLADOS DE FALLAS
-    # ----------------------------------------------------
+    # Gráficos Detallados de Fallas
     col_falla = 'Nivel Evento 6' if 'Nivel Evento 6' in df_f.columns else df_f.columns[5]
     df_fallas = df_f[df_f['Nivel Evento 3'].astype(str).str.contains('FALLA', case=False)]
     
@@ -346,38 +324,17 @@ if not df_f.empty:
         st.divider()
         st.subheader(f"🛠️ Top 15 Causas de Paro ({col_falla})")
         
-        # 1. TOP 15 PARETO
         top15 = df_fallas.groupby(col_falla)['Tiempo (Min)'].sum().nlargest(15).reset_index().sort_values('Tiempo (Min)', ascending=True)
-        
-        fig_pareto = px.bar(
-            top15, 
-            x='Tiempo (Min)', 
-            y=col_falla, 
-            orientation='h', 
-            text_auto='.0f',
-            color='Tiempo (Min)', 
-            color_continuous_scale='Reds',
-            title="Minutos perdidos por tipo de falla (Top 15)"
-        )
+        fig_pareto = px.bar(top15, x='Tiempo (Min)', y=col_falla, orientation='h', text_auto='.0f', color='Tiempo (Min)', color_continuous_scale='Reds', title="Minutos perdidos por tipo de falla")
         st.plotly_chart(fig_pareto, use_container_width=True)
 
-        # 2. MAPA DE CALOR
-        st.subheader("🔥 Mapa de Calor: Máquina vs Falla")
+        st.subheader("🔥 Mapa de Calor")
         pivot_hm = df_fallas.groupby(['Máquina', col_falla])['Tiempo (Min)'].sum().reset_index()
         pivot_hm = pivot_hm[pivot_hm['Tiempo (Min)'] > 10]
         
         if not pivot_hm.empty:
-            fig_hm = px.density_heatmap(
-                pivot_hm, 
-                x=col_falla, 
-                y="Máquina", 
-                z="Tiempo (Min)", 
-                color_continuous_scale="Viridis", 
-                text_auto=True
-            )
+            fig_hm = px.density_heatmap(pivot_hm, x=col_falla, y="Máquina", z="Tiempo (Min)", color_continuous_scale="Viridis", text_auto=True)
             st.plotly_chart(fig_hm, use_container_width=True)
-        else:
-            st.info("No hay suficientes datos significativos para el mapa de calor.")
 
 # ==========================================
 # 8. TABLA DETALLADA
@@ -385,11 +342,4 @@ if not df_f.empty:
 st.divider()
 with st.expander("📂 Ver Registro Detallado de Eventos", expanded=False):
     if not df_f.empty:
-        df_show = df_f.copy()
-        if 'Fecha_DT' in df_show.columns:
-            df_show['Fecha'] = df_show['Fecha_DT'].dt.strftime('%Y-%m-%d')
-            df_show = df_show.sort_values(by=['Fecha_DT', 'Máquina'], ascending=[False, True])
-        
-        st.dataframe(df_show, use_container_width=True, hide_index=True)
-    else:
-        st.info("No hay datos.")
+        st.dataframe(df_f, use_container_width=True, hide_index=True)
