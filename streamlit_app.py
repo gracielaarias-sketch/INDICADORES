@@ -186,14 +186,16 @@ with t1:
 with t2:
     st.markdown("#### Total Soldadura")
     show_metric_row(get_metrics('SOLDADURA'))
+    
+    # MODIFICADO: Ahora en vertical (Celdas arriba, PRP abajo) como Estampado
     with st.expander("Ver detalle"):
-        c_a, c_b = st.columns(2)
-        with c_a:
-            st.markdown("**Celdas Robotizadas**")
-            show_metric_row(get_metrics('CELDA'))
-        with c_b:
-            st.markdown("**Prensas PRP**")
-            show_metric_row(get_metrics('PRP'))
+        st.markdown("**Celdas Robotizadas**")
+        show_metric_row(get_metrics('CELDA'))
+        
+        st.markdown("---")
+        
+        st.markdown("**Prensas PRP**")
+        show_metric_row(get_metrics('PRP'))
 
 # ==========================================
 # 5. GRÁFICO HISTÓRICO OEE (DESPLEGABLE)
@@ -325,6 +327,38 @@ if not df_f.empty:
         top15 = df_fallas.groupby(col_falla)['Tiempo (Min)'].sum().nlargest(15).reset_index().sort_values('Tiempo (Min)', ascending=True)
         fig_pareto = px.bar(top15, x='Tiempo (Min)', y=col_falla, orientation='h', text_auto='.0f', color='Tiempo (Min)', color_continuous_scale='Reds', title="Minutos perdidos por tipo de falla")
         st.plotly_chart(fig_pareto, use_container_width=True)
+
+        # -------------------------------------------------------------
+        # NUEVO: DESPLEGABLE CON FALLAS POR MÁQUINA (TOP 10)
+        # -------------------------------------------------------------
+        with st.expander("🛠️ Top 10 Fallas por Máquina (Seleccionable)"):
+            list_maquinas = sorted(df_fallas['Máquina'].unique())
+            if list_maquinas:
+                maq_sel = st.selectbox("Seleccione la Máquina a analizar:", list_maquinas)
+                
+                # Filtrar por máquina seleccionada
+                df_maq_falla = df_fallas[df_fallas['Máquina'] == maq_sel]
+                
+                # Agrupar, ordenar y tomar top 10
+                top10_maq = df_maq_falla.groupby(col_falla)['Tiempo (Min)'].sum().nlargest(10).reset_index().sort_values('Tiempo (Min)', ascending=True)
+                
+                if not top10_maq.empty:
+                    fig_top10 = px.bar(
+                        top10_maq, 
+                        x='Tiempo (Min)', 
+                        y=col_falla, 
+                        orientation='h', 
+                        text_auto='.0f',
+                        title=f"Top 10 Fallas: {maq_sel}",
+                        color='Tiempo (Min)',
+                        color_continuous_scale='Oranges'
+                    )
+                    st.plotly_chart(fig_top10, use_container_width=True)
+                else:
+                    st.info(f"No hay registros de fallas para {maq_sel} en este periodo.")
+            else:
+                st.warning("No hay datos de fallas para las máquinas seleccionadas.")
+        # -------------------------------------------------------------
 
         st.subheader("Mapa de Calor")
         pivot_hm = df_fallas.groupby(['Máquina', col_falla])['Tiempo (Min)'].sum().reset_index()
