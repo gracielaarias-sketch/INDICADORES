@@ -1,3 +1,8 @@
+Perfecto. He modificado la Sección 8 (Tabla Detallada) para que filtre y muestre exclusivamente las columnas que has pedido: Máquina, Hora Inicio, Hora Fin, Tiempo Total, Evento (Producción/Parada), Detalle (Falla) y Operario.
+
+Aquí tienes el código completo actualizado. Solo tienes que copiar y reemplazar todo en tu app.py.
+
+Python
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -67,11 +72,11 @@ def load_data():
                 df = df.dropna(subset=['Fecha_Filtro'])
             
             # Rellenar Textos
-            cols_texto = ['Fábrica', 'Máquina', 'Evento', 'Código', 'Producto', 'Referencia', 'Nivel Evento 3', 'Nivel Evento 6']
+            cols_texto = ['Fábrica', 'Máquina', 'Evento', 'Código', 'Producto', 'Referencia', 'Nivel Evento 3', 'Nivel Evento 6', 'Operador', 'Hora Inicio', 'Hora Fin']
             for c_txt in cols_texto:
                 matches = [col for col in df.columns if c_txt.lower() in col.lower()]
                 for match in matches:
-                    df[match] = df[match].fillna('Sin Especificar').astype(str)
+                    df[match] = df[match].fillna('').astype(str) # Rellenamos con vacio para que se vea limpio
             return df
 
         df1 = process_df(base_export + gid_datos)
@@ -199,9 +204,7 @@ with t2:
 # 5. GRÁFICO HISTÓRICO OEE (DESPLEGABLE)
 # ==========================================
 st.markdown("---")
-
-# 🔽 AQUI ESTA EL DESPLEGABLE DE OEE QUE PEDISTE 🔽
-with st.expander("📉 Ver Gráfico de Evolución Histórica OEE (Click para abrir)", expanded=False):
+with st.expander("📉 Ver Gráfico de Evolución Histórica OEE ", expanded=False):
     if not df_oee_f.empty and 'OEE' in df_oee_f.columns:
         df_trend = df_oee_f.copy()
         if df_trend['OEE'].dtype == 'object':
@@ -247,7 +250,7 @@ if not df_prod_f.empty:
             total_buenas = df_grouped[col_buenas].sum() if col_buenas else 0
             st.metric("Total Piezas Buenas", f"{total_buenas:,.0f}")
 
-            # 🔽 AQUI ESTA EL DESPLEGABLE DE BARRAS DE PRODUCCION QUE PEDISTE 🔽
+            # Desplegable de Gráfico
             with st.expander("📊 Ver Gráfico de Barras de Producción", expanded=False):
                 cols_grafico = [c for c in [col_buenas, col_retrabajo, col_observadas] if c is not None]
                 if cols_grafico:
@@ -267,7 +270,7 @@ if not df_prod_f.empty:
                 else:
                     st.warning("No hay columnas numéricas (Buenas/Retrabajo) para graficar.")
 
-            # Tabla Detallada (También en desplegable para mantener limpieza)
+            # Desplegable de Tabla
             with st.expander("📋 Ver Tabla Detallada por Código"):
                 cols_finales = [col_maq, col_cod]
                 if col_buenas: cols_finales.append(col_buenas)
@@ -298,7 +301,7 @@ else:
 # 7. ANÁLISIS DE TIEMPOS Y PAROS
 # ==========================================
 st.markdown("---")
-st.header("⏱️ Análisis de fallos")
+st.header("⏱️ Análisis de Tiempos y Fallas")
 
 if not df_f.empty:
     t_prod = df_f[df_f['Evento'].astype(str).str.contains('Producción', case=False)]['Tiempo (Min)'].sum()
@@ -322,7 +325,7 @@ if not df_f.empty:
     
     if not df_fallas.empty:
         st.divider()
-        st.subheader(f"Top 15 Causas de Fallas ({col_falla})")
+        st.subheader(f"Top 15 Causas de fallo ({col_falla})")
         
         top15 = df_fallas.groupby(col_falla)['Tiempo (Min)'].sum().nlargest(15).reset_index().sort_values('Tiempo (Min)', ascending=True)
         fig_pareto = px.bar(top15, x='Tiempo (Min)', y=col_falla, orientation='h', text_auto='.0f', color='Tiempo (Min)', color_continuous_scale='Reds', title="Minutos perdidos por tipo de falla")
@@ -337,9 +340,44 @@ if not df_f.empty:
             st.plotly_chart(fig_hm, use_container_width=True)
 
 # ==========================================
-# 8. TABLA DETALLADA
+# 8. TABLA DETALLADA (PERSONALIZADA)
 # ==========================================
 st.divider()
-with st.expander("📂 Ver Registro Detallado de Eventos", expanded=False):
+with st.expander("📂 Ver Registro Detallado de Eventos", expanded=True):
     if not df_f.empty:
-        st.dataframe(df_f, use_container_width=True, hide_index=True)
+        # Copia para no alterar el original
+        df_show = df_f.copy()
+
+        # Mapa de columnas deseadas vs nombres reales en DataFrame
+        # Ajusta la derecha (valor) si tu Excel tiene nombres ligeramente distintos
+        columnas_deseadas = {
+            'Máquina': 'Máquina',
+            'Hora Inicio': 'Hora Inicio',
+            'Hora Fin': 'Hora Fin',
+            'Tiempo (Min)': 'Tiempo Total (min)', # Renombramos para visualización
+            'Evento': 'Detalle Evento',           # Producción o Parada
+            'Nivel Evento 6': 'Tipo/Detalle Parada', # El detalle específico
+            'Operador': 'Operario'
+        }
+
+        # Filtramos solo las columnas que existen en el DF para evitar errores
+        cols_existentes = [c for c in columnas_deseadas.keys() if c in df_show.columns]
+        
+        # Seleccionamos y renombramos
+        df_final = df_show[cols_existentes].rename(columns=columnas_deseadas)
+
+        # Ordenar (opcional, por Hora Inicio si existe)
+        if 'Hora Inicio' in df_final.columns:
+             # Intento simple de ordenar, asumiendo que es string HH:MM
+             df_final = df_final.sort_values(by='Hora Inicio', ascending=True)
+
+        st.dataframe(
+            df_final, 
+            use_container_width=True, 
+            hide_index=True,
+            column_config={
+                "Tiempo Total (min)": st.column_config.NumberColumn("Tiempo Total", format="%.0f min")
+            }
+        )
+    else:
+        st.info("No hay datos para mostrar.")
