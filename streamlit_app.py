@@ -181,7 +181,7 @@ show_metric_row(get_metrics('GENERAL'))
 
 st.divider()
 
-t1, t2 = st.tabs(["🔨 Estampado", "🔥 Soldadura"])
+t1, t2 = st.tabs(["Estampado", "Soldadura"])
 
 with t1:
     st.markdown("#### Total Estampado")
@@ -208,8 +208,7 @@ with t2:
 # 5. SEPARADOR Y GRÁFICO HISTÓRICO
 # ==========================================
 st.markdown("---")
-st.header("📉 Evolución Histórica OEE")
-
+with st.expander("📉 Evolución Histórica OEE", expanded=False):
 if not df_oee_f.empty and 'OEE' in df_oee_f.columns:
     df_trend = df_oee_f.copy()
     if df_trend['OEE'].dtype == 'object':
@@ -230,7 +229,7 @@ else:
 # 6. SECCIÓN PRODUCCIÓN DETALLADA (MODIFICADO)
 # ==========================================
 st.markdown("---")
-st.header("📦 Producción Realizada")
+st.header("Producción")
 
 if not df_prod_f.empty:
     # 1. Identificar columnas específicas solicitadas
@@ -258,25 +257,7 @@ if not df_prod_f.empty:
             total_buenas = df_grouped[col_buenas].sum() if col_buenas else 0
             st.metric("Total Piezas Buenas", f"{total_buenas:,.0f}")
 
-            # GRÁFICO APILADO (Buenas, Retrabajo, Observadas)
-            cols_grafico = [c for c in [col_buenas, col_retrabajo, col_observadas] if c is not None]
-            if cols_grafico:
-                # Derretir dataframe para formato 'largo' que pide Plotly para barras apiladas
-                df_melt = df_grouped.melt(id_vars=[col_maq, col_cod], value_vars=cols_grafico, var_name='Tipo', value_name='Cantidad')
-                
-                fig_prod = px.bar(
-                    df_melt,
-                    x=col_maq,
-                    y='Cantidad',
-                    color='Tipo',
-                    hover_data=[col_cod],
-                    title="Producción por Máquina (Buenas vs Retrabajo vs Obs.)",
-                    barmode='stack',
-                    text_auto='.2s'
-                )
-                st.plotly_chart(fig_prod, use_container_width=True)
-
-            # TABLA DETALLADA (Lo que pediste explícitamente)
+              # TABLA DETALLADA (Lo que pediste explícitamente)
             st.subheader("Detalle por Código")
             
             # Reordenar columnas para visualización limpia
@@ -296,6 +277,26 @@ if not df_prod_f.empty:
                     col_retrabajo: st.column_config.NumberColumn("Retrabajo", format="%d"),
                     col_observadas: st.column_config.NumberColumn("Observadas", format="%d"),
                 }
+
+            # GRÁFICO APILADO (Buenas, Retrabajo, Observadas)
+
+    with st.expander("📉 Acumulado de produccion por maquina", expanded=False):
+            cols_grafico = [c for c in [col_buenas, col_retrabajo, col_observadas] if c is not None]
+            if cols_grafico:
+                # Derretir dataframe para formato 'largo' que pide Plotly para barras apiladas
+                df_melt = df_grouped.melt(id_vars=[col_maq, col_cod], value_vars=cols_grafico, var_name='Tipo', value_name='Cantidad')
+                
+                fig_prod = px.bar(
+                    df_melt,
+                    x=col_maq,
+                    y='Cantidad',
+                    color='Tipo',
+                    hover_data=[col_cod],
+                    title="Producción por Máquina (Buenas vs Retrabajo vs Obs.)",
+                    barmode='stack',
+                    text_auto='.2s'
+                )
+                st.plotly_chart(fig_prod, use_container_width=True)          
             )
 
         else:
