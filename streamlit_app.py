@@ -1,4 +1,14 @@
+He corregido los errores de sintaxis que tenía el código que enviaste.
 
+Principales correcciones realizadas:
+
+Sección 5 (Histórico): Faltaba la indentación (sangría) dentro del st.expander. Python requiere que el código dentro de un bloque with esté indentado.
+
+Sección 6 (Producción): Había un error grave de paréntesis. El bloque del gráfico (with st.expander...) estaba metido dentro de la función st.dataframe, lo cual rompía el código. He cerrado correctamente la tabla y colocado el gráfico después.
+
+Aquí tienes el código completo y funcional:
+
+Python
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -38,7 +48,7 @@ def load_data():
         # ---------------------------------------------------------
         gid_datos = "0"             # Datos crudos de paros
         gid_oee = "1767654796"      # Datos de OEE
-        gid_prod = "315437448"    # PRODUCCION!
+        gid_prod = "315437448"      # PRODUCCION
         # ---------------------------------------------------------
 
         base_export = url_base.split("/edit")[0] + "/export?format=csv&gid="
@@ -54,7 +64,6 @@ def load_data():
                 return pd.DataFrame()
             
             # Limpieza General de columnas numéricas
-            # AQUI AGREGAMOS TUS NUEVAS COLUMNAS PARA QUE SEAN NUMÉRICAS
             cols_num = [
                 'Tiempo (Min)', 'Cantidad', 'Piezas', 'Produccion', 'Total',
                 'Buenas', 'Retrabajo', 'Observadas', 'Tiempo de Ciclo', 'Ciclo'
@@ -209,24 +218,24 @@ with t2:
 # ==========================================
 st.markdown("---")
 with st.expander("📉 Evolución Histórica OEE", expanded=False):
-if not df_oee_f.empty and 'OEE' in df_oee_f.columns:
-    df_trend = df_oee_f.copy()
-    if df_trend['OEE'].dtype == 'object':
-        df_trend['OEE_Num'] = df_trend['OEE'].astype(str).str.replace('%','').str.replace(',','.').astype(float)
+    if not df_oee_f.empty and 'OEE' in df_oee_f.columns:
+        df_trend = df_oee_f.copy()
+        if df_trend['OEE'].dtype == 'object':
+            df_trend['OEE_Num'] = df_trend['OEE'].astype(str).str.replace('%','').str.replace(',','.').astype(float)
+        else:
+            df_trend['OEE_Num'] = df_trend['OEE']
+        
+        trend_data = df_trend.groupby('Fecha_Filtro')['OEE_Num'].mean().reset_index()
+        
+        fig_trend = px.line(trend_data, x='Fecha_Filtro', y='OEE_Num', markers=True,
+                            title='Tendencia Diaria del OEE (%)', labels={'OEE_Num': 'OEE', 'Fecha_Filtro': 'Fecha'})
+        fig_trend.add_hline(y=85, line_dash="dot", annotation_text="Meta (85%)", line_color="green")
+        st.plotly_chart(fig_trend, use_container_width=True)
     else:
-        df_trend['OEE_Num'] = df_trend['OEE']
-    
-    trend_data = df_trend.groupby('Fecha_Filtro')['OEE_Num'].mean().reset_index()
-    
-    fig_trend = px.line(trend_data, x='Fecha_Filtro', y='OEE_Num', markers=True,
-                        title='Tendencia Diaria del OEE (%)', labels={'OEE_Num': 'OEE', 'Fecha_Filtro': 'Fecha'})
-    fig_trend.add_hline(y=85, line_dash="dot", annotation_text="Meta (85%)", line_color="green")
-    st.plotly_chart(fig_trend, use_container_width=True)
-else:
-    st.info("No hay datos históricos para graficar.")
+        st.info("No hay datos históricos para graficar.")
 
 # ==========================================
-# 6. SECCIÓN PRODUCCIÓN DETALLADA (MODIFICADO)
+# 6. SECCIÓN PRODUCCIÓN DETALLADA
 # ==========================================
 st.markdown("---")
 st.header("Producción")
@@ -248,7 +257,7 @@ if not df_prod_f.empty:
         if col_buenas: agg_dict[col_buenas] = 'sum'
         if col_retrabajo: agg_dict[col_retrabajo] = 'sum'
         if col_observadas: agg_dict[col_observadas] = 'sum'
-        if col_ciclo: agg_dict[col_ciclo] = 'mean' # El ciclo se promedia
+        if col_ciclo: agg_dict[col_ciclo] = 'mean'
 
         if agg_dict:
             df_grouped = df_prod_f.groupby([col_maq, col_cod]).agg(agg_dict).reset_index()
@@ -257,10 +266,9 @@ if not df_prod_f.empty:
             total_buenas = df_grouped[col_buenas].sum() if col_buenas else 0
             st.metric("Total Piezas Buenas", f"{total_buenas:,.0f}")
 
-              # TABLA DETALLADA (Lo que pediste explícitamente)
+            # TABLA DETALLADA
             st.subheader("Detalle por Código")
             
-            # Reordenar columnas para visualización limpia
             cols_finales = [col_maq, col_cod]
             if col_buenas: cols_finales.append(col_buenas)
             if col_retrabajo: cols_finales.append(col_retrabajo)
@@ -277,27 +285,25 @@ if not df_prod_f.empty:
                     col_retrabajo: st.column_config.NumberColumn("Retrabajo", format="%d"),
                     col_observadas: st.column_config.NumberColumn("Observadas", format="%d"),
                 }
-
-            # GRÁFICO APILADO (Buenas, Retrabajo, Observadas)
-
-    with st.expander("📉 Acumulado de produccion por maquina", expanded=False):
-            cols_grafico = [c for c in [col_buenas, col_retrabajo, col_observadas] if c is not None]
-            if cols_grafico:
-                # Derretir dataframe para formato 'largo' que pide Plotly para barras apiladas
-                df_melt = df_grouped.melt(id_vars=[col_maq, col_cod], value_vars=cols_grafico, var_name='Tipo', value_name='Cantidad')
-                
-                fig_prod = px.bar(
-                    df_melt,
-                    x=col_maq,
-                    y='Cantidad',
-                    color='Tipo',
-                    hover_data=[col_cod],
-                    title="Producción por Máquina (Buenas vs Retrabajo vs Obs.)",
-                    barmode='stack',
-                    text_auto='.2s'
-                )
-                st.plotly_chart(fig_prod, use_container_width=True)          
             )
+
+            # GRÁFICO APILADO (Dentro de Expander)
+            with st.expander("📉 Acumulado de produccion por maquina", expanded=False):
+                cols_grafico = [c for c in [col_buenas, col_retrabajo, col_observadas] if c is not None]
+                if cols_grafico:
+                    df_melt = df_grouped.melt(id_vars=[col_maq, col_cod], value_vars=cols_grafico, var_name='Tipo', value_name='Cantidad')
+                    
+                    fig_prod = px.bar(
+                        df_melt,
+                        x=col_maq,
+                        y='Cantidad',
+                        color='Tipo',
+                        hover_data=[col_cod],
+                        title="Producción por Máquina (Buenas vs Retrabajo vs Obs.)",
+                        barmode='stack',
+                        text_auto='.2s'
+                    )
+                    st.plotly_chart(fig_prod, use_container_width=True)
 
         else:
             st.warning("Se encontraron Máquina y Código, pero no las columnas de métricas (Buenas, Retrabajo, etc).")
