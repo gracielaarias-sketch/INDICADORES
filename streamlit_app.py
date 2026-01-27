@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -67,7 +68,8 @@ def load_data():
                 df = df.dropna(subset=['Fecha_Filtro'])
             
             # Rellenar Textos
-            cols_texto = ['Fábrica', 'Máquina', 'Evento', 'Código', 'Producto', 'Referencia', 'Nivel Evento 3', 'Nivel Evento 6', 'Operador', 'Hora Inicio', 'Hora Fin']
+            # MODIFICADO: Se añadió 'Nivel Evento 5' a la lista
+            cols_texto = ['Fábrica', 'Máquina', 'Evento', 'Código', 'Producto', 'Referencia', 'Nivel Evento 3', 'Nivel Evento 5', 'Nivel Evento 6', 'Operador', 'Hora Inicio', 'Hora Fin']
             for c_txt in cols_texto:
                 matches = [col for col in df.columns if c_txt.lower() in col.lower()]
                 for match in matches:
@@ -187,7 +189,6 @@ with t2:
     st.markdown("#### Total Soldadura")
     show_metric_row(get_metrics('SOLDADURA'))
     
-    # MODIFICADO: Ahora en vertical (Celdas arriba, PRP abajo) como Estampado
     with st.expander("Ver detalle"):
         st.markdown("**Celdas Robotizadas**")
         show_metric_row(get_metrics('CELDA'))
@@ -318,18 +319,38 @@ if not df_f.empty:
 
     # Gráficos Detallados de Fallas
     col_falla = 'Nivel Evento 6' if 'Nivel Evento 6' in df_f.columns else df_f.columns[5]
+    # Definimos la columna de categoría para usarla en los gráficos
+    col_cat_falla = 'Nivel Evento 5' if 'Nivel Evento 5' in df_f.columns else None
+
     df_fallas = df_f[df_f['Nivel Evento 3'].astype(str).str.contains('FALLA', case=False)]
     
     if not df_fallas.empty:
         st.divider()
         st.subheader(f"Top 15 Causas de fallo ({col_falla})")
         
-        top15 = df_fallas.groupby(col_falla)['Tiempo (Min)'].sum().nlargest(15).reset_index().sort_values('Tiempo (Min)', ascending=True)
-        fig_pareto = px.bar(top15, x='Tiempo (Min)', y=col_falla, orientation='h', text_auto='.0f', color='Tiempo (Min)', color_continuous_scale='Reds', title="Minutos perdidos por tipo de falla")
+        # Agrupamos por Falla (6) y Categoría (5) si existe
+        grupos = [col_falla]
+        if col_cat_falla: grupos.append(col_cat_falla)
+        
+        top15 = df_fallas.groupby(grupos)['Tiempo (Min)'].sum().reset_index()
+        top15 = top15.nlargest(15, 'Tiempo (Min)').sort_values('Tiempo (Min)', ascending=True)
+
+        fig_pareto = px.bar(
+            top15, 
+            x='Tiempo (Min)', 
+            y=col_falla, 
+            orientation='h', 
+            text_auto='.0f', 
+            color='Tiempo (Min)', 
+            color_continuous_scale='Reds', 
+            title="Minutos perdidos por tipo de falla",
+            # AÑADIDO: Hover data con la categoría
+            hover_data=[col_cat_falla] if col_cat_falla else None
+        )
         st.plotly_chart(fig_pareto, use_container_width=True)
 
         # -------------------------------------------------------------
-        # NUEVO: DESPLEGABLE CON FALLAS POR MÁQUINA (TOP 10)
+        # DESPLEGABLE CON FALLAS POR MÁQUINA (TOP 10)
         # -------------------------------------------------------------
         with st.expander("Top 10 Fallas por Máquina"):
             list_maquinas = sorted(df_fallas['Máquina'].unique())
@@ -339,8 +360,9 @@ if not df_f.empty:
                 # Filtrar por máquina seleccionada
                 df_maq_falla = df_fallas[df_fallas['Máquina'] == maq_sel]
                 
-                # Agrupar, ordenar y tomar top 10
-                top10_maq = df_maq_falla.groupby(col_falla)['Tiempo (Min)'].sum().nlargest(10).reset_index().sort_values('Tiempo (Min)', ascending=True)
+                # Agrupar, ordenar y tomar top 10 (Incluyendo Categoría)
+                top10_maq = df_maq_falla.groupby(grupos)['Tiempo (Min)'].sum().reset_index()
+                top10_maq = top10_maq.nlargest(10, 'Tiempo (Min)').sort_values('Tiempo (Min)', ascending=True)
                 
                 if not top10_maq.empty:
                     fig_top10 = px.bar(
@@ -351,7 +373,9 @@ if not df_f.empty:
                         text_auto='.0f',
                         title=f"Top 10 Fallas: {maq_sel}",
                         color='Tiempo (Min)',
-                        color_continuous_scale='Oranges'
+                        color_continuous_scale='Oranges',
+                        # AÑADIDO: Hover data con la categoría
+                        hover_data=[col_cat_falla] if col_cat_falla else None
                     )
                     st.plotly_chart(fig_top10, use_container_width=True)
                 else:
@@ -391,6 +415,7 @@ with st.expander("📂 Ver Registro Detallado de Eventos", expanded=True):
             'Hora Fin': 'Hora Fin',
             'Tiempo (Min)': 'Tiempo (min)',
             'Evento': 'Evento',
+            'Nivel Evento 5': 'Categoría Falla', # AÑADIDO: Columna categoría
             'Nivel Evento 6': 'Detalle Falla',
             'Operador': 'Operador'
         }
