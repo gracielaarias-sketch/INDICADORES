@@ -1,16 +1,3 @@
-Aquí tienes el código completo y actualizado.
-
-He integrado los siguientes cambios:
-
-Carga de Datos: Ahora lee la pestaña de PRODUCCION. (¡Ojo! Debes poner tu GID en la línea 36).
-
-Separador Visual: He añadido una línea divisoria clara entre los KPI de OEE y el Gráfico Histórico.
-
-Nueva Sección: He añadido el gráfico de "Producción por Código y Máquina" justo después del historial.
-
-Copia y pega todo esto en tu archivo app.py.
-
-Python
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -49,7 +36,7 @@ def load_data():
         # ---------------------------------------------------------
         gid_datos = "0"             # Datos crudos de paros
         gid_oee = "1767654796"      # Datos de OEE
-        gid_prod = "TU_GID_AQUI"    # <--- ¡PEGA AQUÍ EL GID DE LA PESTAÑA PRODUCCION!
+        gid_prod = "315437448"    # <--- ¡PEGA AQUÍ EL GID DE LA PESTAÑA PRODUCCION!
         # ---------------------------------------------------------
 
         base_export = url_base.split("/edit")[0] + "/export?format=csv&gid="
