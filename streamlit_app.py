@@ -248,7 +248,7 @@ if not df_prod_f.empty:
             st.metric("Total Piezas Buenas", f"{total_buenas:,.0f}")
 
             # 🔽 AQUI ESTA EL DESPLEGABLE DE BARRAS DE PRODUCCION QUE PEDISTE 🔽
-            with st.expander("📊 Ver Gráfico de Barras de Producción (Click para abrir)", expanded=False):
+            with st.expander("📊 Ver Gráfico de Barras de Producción", expanded=False):
                 cols_grafico = [c for c in [col_buenas, col_retrabajo, col_observadas] if c is not None]
                 if cols_grafico:
                     df_melt = df_grouped.melt(id_vars=[col_maq, col_cod], value_vars=cols_grafico, var_name='Tipo', value_name='Cantidad')
@@ -298,7 +298,7 @@ else:
 # 7. ANÁLISIS DE TIEMPOS Y PAROS
 # ==========================================
 st.markdown("---")
-st.header("⏱️ Análisis de Tiempos y Paros")
+st.header("⏱️ Análisis de fallos")
 
 if not df_f.empty:
     t_prod = df_f[df_f['Evento'].astype(str).str.contains('Producción', case=False)]['Tiempo (Min)'].sum()
@@ -322,13 +322,13 @@ if not df_f.empty:
     
     if not df_fallas.empty:
         st.divider()
-        st.subheader(f"🛠️ Top 15 Causas de Paro ({col_falla})")
+        st.subheader(f"Top 15 Causas de Fallas ({col_falla})")
         
         top15 = df_fallas.groupby(col_falla)['Tiempo (Min)'].sum().nlargest(15).reset_index().sort_values('Tiempo (Min)', ascending=True)
         fig_pareto = px.bar(top15, x='Tiempo (Min)', y=col_falla, orientation='h', text_auto='.0f', color='Tiempo (Min)', color_continuous_scale='Reds', title="Minutos perdidos por tipo de falla")
         st.plotly_chart(fig_pareto, use_container_width=True)
 
-        st.subheader("🔥 Mapa de Calor")
+        st.subheader("Mapa de Calor")
         pivot_hm = df_fallas.groupby(['Máquina', col_falla])['Tiempo (Min)'].sum().reset_index()
         pivot_hm = pivot_hm[pivot_hm['Tiempo (Min)'] > 10]
         
