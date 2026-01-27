@@ -1,21 +1,4 @@
-Entendido. Vamos a adaptar el código para que busque específicamente las columnas Buenas, Retrabajo, Observadas y Tiempo de Ciclo en tu hoja de producción, asegurando que se sumen las cantidades y se promedie el tiempo de ciclo correctamente.
 
-Aquí tienes el código completo y ajustado.
-
-Cambios principales realizados:
-En load_data: Agregué las nuevas columnas (Buenas, Retrabajo, Observadas, Tiempo de Ciclo) a la lista de conversión numérica para asegurar que se lean como números y no texto.
-
-En la Sección 6 (Producción):
-
-He creado una lógica de búsqueda específica para encontrar estas columnas aunque tengan mayúsculas/minúsculas diferentes.
-
-He añadido una Tabla Resumen que muestra exactamente las columnas que pediste.
-
-He ajustado el Gráfico para que sea una barra apilada (Buenas + Retrabajo + Observadas).
-
-Copia y reemplaza todo tu app.py con esto:
-
-Python
 import streamlit as st
 import pandas as pd
 import plotly.express as px
