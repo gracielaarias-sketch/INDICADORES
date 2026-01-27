@@ -194,7 +194,7 @@ with t2:
         
         st.markdown("---")
         
-        st.markdown("**Prensas PRP**")
+        st.markdown("**PRP**")
         show_metric_row(get_metrics('PRP'))
 
 # ==========================================
@@ -331,7 +331,7 @@ if not df_f.empty:
         # -------------------------------------------------------------
         # NUEVO: DESPLEGABLE CON FALLAS POR MÁQUINA (TOP 10)
         # -------------------------------------------------------------
-        with st.expander("🛠️ Top 10 Fallas por Máquina (Seleccionable)"):
+        with st.expander("Top 10 Fallas por Máquina"):
             list_maquinas = sorted(df_fallas['Máquina'].unique())
             if list_maquinas:
                 maq_sel = st.selectbox("Seleccione la Máquina a analizar:", list_maquinas)
