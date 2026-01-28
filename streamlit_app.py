@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -54,7 +53,7 @@ def load_data():
             cols_num = [
                 'Tiempo (Min)', 'Cantidad', 'Piezas', 'Produccion', 'Total',
                 'Buenas', 'Retrabajo', 'Observadas', 'Tiempo de Ciclo', 'Ciclo',
-                'Performance', 'Eficiencia', 'Velocidad' # Agregado para detectar performance
+                'Performance', 'Eficiencia', 'Velocidad', 'Ritmo', 'OEE' 
             ]
             for c in cols_num:
                 matches = [col for col in df.columns if c.lower() in col.lower()]
@@ -67,7 +66,7 @@ def load_data():
             if col_fecha:
                 df['Fecha_DT'] = pd.to_datetime(df[col_fecha], dayfirst=True, errors='coerce')
                 df['Fecha_Filtro'] = df['Fecha_DT'].dt.normalize()
-                df = df.dropna(subset=['Fecha_Filtro'])
+                # No eliminamos NaT aqui para permitir diagnostico, se filtra despues
             
             # Rellenar Textos
             cols_texto = [
@@ -78,13 +77,13 @@ def load_data():
             for c_txt in cols_texto:
                 matches = [col for col in df.columns if c_txt.lower() in col.lower()]
                 for match in matches:
-                    df[match] = df[match].fillna('').astype(str)
+                    df[match] = df[match].fillna('').astype(str).str.strip() # Strip para limpiar espacios
             return df
 
         df1 = process_df(base_export + gid_datos)
         df2 = process_df(base_export + gid_oee)
         df3 = process_df(base_export + gid_prod)
-        df4 = process_df(base_export + gid_perf) # DF Performance
+        df4 = process_df(base_export + gid_perf) 
         
         return df1, df2, df3, df4
 
@@ -100,6 +99,10 @@ df_raw, df_oee_raw, df_prod_raw, df_perf_raw = load_data()
 if df_raw.empty:
     st.warning("No hay datos cargados en la hoja principal.")
     st.stop()
+
+# Asegurarse que la columna Fecha existe y filtrar
+if 'Fecha_Filtro' in df_raw.columns:
+     df_raw = df_raw.dropna(subset=['Fecha_Filtro'])
 
 st.sidebar.header("📅 Rango de tiempo")
 min_d = df_raw['Fecha_Filtro'].min().date()
@@ -127,7 +130,8 @@ if isinstance(rango, (list, tuple)) and len(rango) == 2:
     
     # 2. OEE
     if not df_oee_raw.empty and 'Fecha_Filtro' in df_oee_raw.columns:
-        df_oee_f = df_oee_raw[(df_oee_raw['Fecha_Filtro'] >= ini) & (df_oee_raw['Fecha_Filtro'] <= fin)]
+        df_oee_f = df_oee_raw.dropna(subset=['Fecha_Filtro'])
+        df_oee_f = df_oee_f[(df_oee_f['Fecha_Filtro'] >= ini) & (df_oee_f['Fecha_Filtro'] <= fin)]
         col_maq_oee = next((c for c in df_oee_f.columns if 'máquina' in c.lower()), None)
         if col_maq_oee:
              df_oee_f = df_oee_f[df_oee_f[col_maq_oee].isin(máquinas)]
@@ -136,7 +140,8 @@ if isinstance(rango, (list, tuple)) and len(rango) == 2:
         
     # 3. Producción
     if not df_prod_raw.empty and 'Fecha_Filtro' in df_prod_raw.columns:
-        df_prod_f = df_prod_raw[(df_prod_raw['Fecha_Filtro'] >= ini) & (df_prod_raw['Fecha_Filtro'] <= fin)]
+        df_prod_f = df_prod_raw.dropna(subset=['Fecha_Filtro'])
+        df_prod_f = df_prod_f[(df_prod_f['Fecha_Filtro'] >= ini) & (df_prod_f['Fecha_Filtro'] <= fin)]
         col_maq_prod = next((c for c in df_prod_f.columns if 'máquina' in c.lower() or 'maquina' in c.lower()), None)
         if col_maq_prod:
             df_prod_f = df_prod_f[df_prod_f[col_maq_prod].isin(máquinas)]
@@ -145,11 +150,16 @@ if isinstance(rango, (list, tuple)) and len(rango) == 2:
 
     # 4. Performance (PESTAÑA PERFORMANCE)
     if not df_perf_raw.empty and 'Fecha_Filtro' in df_perf_raw.columns:
-        df_perf_f = df_perf_raw[(df_perf_raw['Fecha_Filtro'] >= ini) & (df_perf_raw['Fecha_Filtro'] <= fin)]
-        # Filtrar también por las máquinas seleccionadas para mantener consistencia
+        df_perf_f = df_perf_raw.dropna(subset=['Fecha_Filtro'])
+        df_perf_f = df_perf_f[(df_perf_f['Fecha_Filtro'] >= ini) & (df_perf_f['Fecha_Filtro'] <= fin)]
+        
+        # Filtrar también por las máquinas seleccionadas
         col_maq_perf = next((c for c in df_perf_f.columns if 'máquina' in c.lower()), None)
         if col_maq_perf:
-            df_perf_f = df_perf_f[df_perf_f[col_maq_perf].isin(máquinas)]
+            # Normalizamos nombres para asegurar match (strip y lower)
+            maquinas_lower = [m.lower().strip() for m in máquinas]
+            mask_maq = df_perf_f[col_maq_perf].astype(str).str.lower().str.strip().isin(maquinas_lower)
+            df_perf_f = df_perf_f[mask_maq]
     else:
         df_perf_f = pd.DataFrame()
 
@@ -239,14 +249,12 @@ with st.expander("📉 Ver Gráfico de Evolución Histórica OEE", expanded=Fals
 
 
 # ==============================================================================
-# 📋 BLOQUE CENTRAL: ANÁLISIS OPERATIVO (TIEMPOS, PERFORMANCE, DESCANSOS)
+# 📋 BLOQUE CENTRAL: ANÁLISIS OPERATIVO
 # ==============================================================================
 st.markdown("---")
-st.header("📋 Análisis Operativo: Tiempos, Performance y Descansos")
+st.header("📋 Análisis Operativo")
 
-# ------------------------------------------
-# 1. INICIO Y FIN DE TURNO (DATOS)
-# ------------------------------------------
+# 1. HORARIOS
 with st.expander("⏱️ 1. Horarios de Turno (Inicio/Fin)", expanded=False):
     if not df_f.empty:
         c_ini = 'Hora Inicio'
@@ -256,9 +264,7 @@ with st.expander("⏱️ 1. Horarios de Turno (Inicio/Fin)", expanded=False):
         c_fecha = 'Fecha_Filtro'
 
         if all(col in df_f.columns for col in [c_ini, c_fin, c_tiempo, c_maq, c_fecha]):
-            
             df_calc = df_f[[c_fecha, c_maq, c_ini, c_fin, c_tiempo]].copy()
-
             def time_str_to_min(val):
                 try:
                     val = str(val).strip()
@@ -266,131 +272,166 @@ with st.expander("⏱️ 1. Horarios de Turno (Inicio/Fin)", expanded=False):
                         parts = val.split(":")
                         return int(parts[0]) * 60 + int(parts[1])
                     return None
-                except:
-                    return None
-
+                except: return None
             df_calc['min_ini'] = df_calc[c_ini].apply(time_str_to_min)
             df_calc['min_fin'] = df_calc[c_fin].apply(time_str_to_min)
             
             df_daily = df_calc.groupby([c_fecha, c_maq]).agg({
-                'min_ini': 'min',      
-                'min_fin': 'max',      
-                c_tiempo: 'sum'        
+                'min_ini': 'min', 'min_fin': 'max', c_tiempo: 'sum'
             }).reset_index()
 
             df_final_avg = df_daily.groupby(c_maq).agg({
-                'min_ini': 'mean',     
-                'min_fin': 'mean',     
-                c_tiempo: 'mean'       
+                'min_ini': 'mean', 'min_fin': 'mean', c_tiempo: 'mean'
             }).reset_index()
 
             def min_to_time_str(val):
                 if pd.isna(val): return "--:--"
-                h = int(val // 60)
-                m = int(val % 60)
+                h = int(val // 60); m = int(val % 60)
                 return f"{h:02d}:{m:02d}"
 
             df_final_avg['Promedio Inicio'] = df_final_avg['min_ini'].apply(min_to_time_str)
             df_final_avg['Promedio Fin'] = df_final_avg['min_fin'].apply(min_to_time_str)
             
-            st.dataframe(
-                df_final_avg[[c_maq, 'Promedio Inicio', 'Promedio Fin', c_tiempo]],
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    c_tiempo: st.column_config.NumberColumn("Tiempo Total Promedio (Min)", format="%.0f min")
-                }
-            )
-            st.caption("*Cálculo basado en registros de la pestaña DATOS.*")
+            st.dataframe(df_final_avg[[c_maq, 'Promedio Inicio', 'Promedio Fin', c_tiempo]], use_container_width=True, hide_index=True, column_config={c_tiempo: st.column_config.NumberColumn("Tiempo Total Promedio (Min)", format="%.0f min")})
         else:
-            st.warning("Faltan columnas 'Hora Inicio' o 'Hora Fin' en la pestaña de DATOS.")
+            st.warning("Faltan columnas de horario.")
     else:
-        st.info("No hay datos cargados en la pestaña principal.")
+        st.info("No hay datos de paros.")
 
-# ------------------------------------------
-# 2. PERFORMANCE (PESTAÑA PERFORMANCE)
-# ------------------------------------------
-with st.expander("🚀 2. Performance por Máquina (Promedio)", expanded=False):
-    if not df_perf_f.empty:
-        # Identificar columnas
-        col_maq_p = next((c for c in df_perf_f.columns if 'máquina' in c.lower()), None)
-        # Buscar columna de performance (Performance, Eficiencia, etc.)
-        col_val_p = next((c for c in df_perf_f.columns if any(x in c.lower() for x in ['performance', 'eficiencia'])), None)
-
-        if col_maq_p and col_val_p:
-            # Agrupar por máquina y calcular promedio (si es rango de fechas)
-            df_perf_agrupado = df_perf_f.groupby(col_maq_p)[col_val_p].mean().reset_index()
-            
-            # Ordenar descendente
-            df_perf_agrupado = df_perf_agrupado.sort_values(by=col_val_p, ascending=False)
-            
-            # Mostrar tabla
-            st.dataframe(
-                df_perf_agrupado,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    col_val_p: st.column_config.NumberColumn("Performance Promedio (%)", format="%.1f %%")
-                }
-            )
-            st.caption(f"*Datos extraídos de la pestaña PERFORMANCE. Promedio calculado para el rango seleccionado.*")
-        else:
-            st.warning("No se encontraron las columnas 'Máquina' o 'Performance' en la pestaña PERFORMANCE.")
-    else:
-        st.info("No hay datos disponibles en la pestaña Performance para la selección actual.")
-
-# ------------------------------------------
-# 3. DESCANSOS (BAÑO/REFRI - DATOS)
-# ------------------------------------------
-with st.expander("☕ 3. Tiempos de Descanso por Operador (Baño y Refrigerio)"):
+# 2. DESCANSOS
+with st.expander("☕ 2. Tiempos de Descanso por Operador"):
     if not df_f.empty and 'Operador' in df_f.columns:
-        
         tab_bano, tab_refri = st.tabs(["🚽 Baño", "🥪 Refrigerio"])
-
         def crear_tabla_descanso(keyword, tab_destino):
             col_target = 'Nivel Evento 4'
-            
             col_match = next((c for c in df_f.columns if col_target.lower() in c.lower()), None)
-            
             if not col_match:
-                with tab_destino: st.warning(f"No se encontró la columna '{col_target}' en los datos.")
+                with tab_destino: st.warning(f"No se encontró la columna '{col_target}'.")
                 return
-
             mask = df_f[col_match].astype(str).str.contains(keyword, case=False)
             df_sub = df_f[mask]
-
             if not df_sub.empty:
                 resumen = df_sub.groupby('Operador')['Tiempo (Min)'].agg(['sum', 'mean', 'count']).reset_index()
                 resumen.columns = ['Operador', 'Tiempo Total (Min)', 'Promedio por vez (Min)', 'Eventos']
-                
                 resumen = resumen.sort_values('Tiempo Total (Min)', ascending=False)
-                
-                val_total = resumen['Tiempo Total (Min)'].sum()
-                val_promedio = resumen['Tiempo Total (Min)'].mean()
-
                 with tab_destino:
-                    c1, c2 = st.columns(2)
-                    c1.metric(f"Total Minutos ({keyword})", f"{val_total:,.0f}")
-                    c2.metric(f"Promedio General ({keyword})", f"{val_promedio:,.1f} min")
+                    st.dataframe(resumen, use_container_width=True, hide_index=True, column_config={"Tiempo Total (Min)": st.column_config.NumberColumn(format="%.0f min"), "Promedio por vez (Min)": st.column_config.NumberColumn(format="%.1f min")})
+            else:
+                with tab_destino: st.info(f"No se encontraron registros de '{keyword}'.")
+        crear_tabla_descanso("Baño", tab_bano)
+        crear_tabla_descanso("Refrigerio", tab_refri)
+    else:
+        st.warning("No se encontró la columna 'Operador'.")
+
+
+# ==============================================================================
+# 🛑 9. NUEVO: ANÁLISIS DETALLADO POR OPERADOR (TRES PESTAÑAS SOLICITADAS)
+# ==============================================================================
+st.markdown("---")
+st.subheader("👤 Análisis Detallado por Operador")
+
+with st.expander("Ver Reporte de Operadores (Performance, Máquinas y Gráfico)", expanded=True):
+    
+    # Creamos las 3 pestañas solicitadas
+    tab_op_perf, tab_op_maq, tab_op_graf = st.tabs([
+        "📊 Performance Promedio (Performance)", 
+        "🏗️ Máquinas Iniciadas (Producción)", 
+        "📈 Evolución Temporal (Gráfico)"
+    ])
+
+    # ------------------------------------------------
+    # PESTAÑA 1: PERFORMANCE PROMEDIO (Desde Pestaña PERFORMANCE)
+    # ------------------------------------------------
+    with tab_op_perf:
+        if not df_perf_f.empty:
+            c_op = next((c for c in df_perf_f.columns if 'operador' in c.lower()), None)
+            c_perf = next((c for c in df_perf_f.columns if any(x in c.lower() for x in ['performance', 'eficiencia', 'vel'])), None)
+
+            if c_op and c_perf:
+                # Limpiar operadores vacíos
+                df_p_clean = df_perf_f[df_perf_f[c_op].astype(str).str.strip() != '']
+                
+                if not df_p_clean.empty:
+                    # Agrupar por Operador y Promediar Performance
+                    df_res = df_p_clean.groupby(c_op)[c_perf].mean().reset_index()
+                    df_res = df_res.sort_values(c_perf, ascending=False)
                     
                     st.dataframe(
-                        resumen,
+                        df_res,
                         use_container_width=True,
                         hide_index=True,
                         column_config={
-                            "Tiempo Total (Min)": st.column_config.NumberColumn(format="%.0f min"),
-                            "Promedio por vez (Min)": st.column_config.NumberColumn(format="%.1f min")
+                            c_perf: st.column_config.ProgressColumn(
+                                "Performance Promedio (%)", 
+                                format="%.1f%%", 
+                                min_value=0, 
+                                max_value=100
+                            )
                         }
                     )
+                else:
+                    st.info("No hay datos válidos de operadores en la pestaña Performance.")
             else:
-                with tab_destino:
-                    st.info(f"No se encontraron registros que contengan '{keyword}' en la columna '{col_target}'.")
+                st.warning("No se encontraron las columnas 'Operador' o 'Performance' en los datos de Performance.")
+        else:
+            st.info("No hay datos en la pestaña Performance para este periodo.")
 
-        crear_tabla_descanso("Baño", tab_bano)
-        crear_tabla_descanso("Refrigerio", tab_refri)
+    # ------------------------------------------------
+    # PESTAÑA 2: MÁQUINAS INICIADAS (Desde Pestaña PRODUCCIÓN)
+    # ------------------------------------------------
+    with tab_op_maq:
+        if not df_prod_f.empty:
+            c_op_prod = next((c for c in df_prod_f.columns if 'operador' in c.lower()), None)
+            c_maq_prod = next((c for c in df_prod_f.columns if 'máquina' in c.lower()), None)
+            
+            if c_op_prod and c_maq_prod:
+                df_prod_clean = df_prod_f[df_prod_f[c_op_prod].astype(str).str.strip() != '']
+                
+                if not df_prod_clean.empty:
+                    # Agrupar y listar únicos
+                    df_maq_op = df_prod_clean.groupby(c_op_prod)[c_maq_prod].unique().apply(lambda x: ", ".join(sorted(map(str, x)))).reset_index()
+                    df_maq_op.columns = ['Operador', 'Máquinas Operadas']
+                    
+                    st.dataframe(df_maq_op, use_container_width=True, hide_index=True)
+                else:
+                    st.info("No hay operadores registrados en Producción.")
+            else:
+                st.warning("Faltan columnas 'Operador' o 'Máquina' en Producción.")
+        else:
+            st.info("No hay datos de Producción para este periodo.")
 
-    else:
-        st.warning("No se encontró la columna 'Operador' o datos suficientes.")
+    # ------------------------------------------------
+    # PESTAÑA 3: GRÁFICO EVOLUCIÓN (Desde Pestaña PERFORMANCE)
+    # ------------------------------------------------
+    with tab_op_graf:
+        if not df_perf_f.empty:
+            c_op = next((c for c in df_perf_f.columns if 'operador' in c.lower()), None)
+            c_perf = next((c for c in df_perf_f.columns if any(x in c.lower() for x in ['performance', 'eficiencia', 'vel'])), None)
+            
+            if c_op and c_perf:
+                df_graf = df_perf_f[df_perf_f[c_op].astype(str).str.strip() != ''].copy()
+                
+                if not df_graf.empty:
+                    # Agrupar por Fecha y Operador para el gráfico (promedio diario si hay varios registros)
+                    df_trend_op = df_graf.groupby(['Fecha_Filtro', c_op])[c_perf].mean().reset_index()
+                    
+                    fig_op = px.line(
+                        df_trend_op, 
+                        x='Fecha_Filtro', 
+                        y=c_perf, 
+                        color=c_op,
+                        markers=True,
+                        title="Evolución de Performance por Operador",
+                        labels={c_perf: 'Performance (%)', 'Fecha_Filtro': 'Fecha'}
+                    )
+                    st.plotly_chart(fig_op, use_container_width=True)
+                else:
+                    st.info("No hay datos suficientes para graficar.")
+            else:
+                st.warning("Columnas no encontradas para el gráfico.")
+        else:
+            st.info("No hay datos para el gráfico.")
+
 
 # ==========================================
 # 6. SECCIÓN PRODUCCIÓN
