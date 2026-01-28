@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -39,7 +38,7 @@ def load_data():
         gid_datos = "0"             # Datos crudos de paros
         gid_oee = "1767654796"      # Datos de OEE
         gid_prod = "315437448"      # PRODUCCION
-        gid_operarios = "354131379" # PERFO OPERARIOS (Asegúrate que este GID es correcto)
+        gid_operarios = "354131379" # PERFO OPERARIOS
         # ---------------------------------------------------------
 
         base_export = url_base.split("/edit")[0] + "/export?format=csv&gid="
@@ -70,11 +69,12 @@ def load_data():
                 df['Fecha_Filtro'] = df['Fecha_DT'].dt.normalize()
                 df = df.dropna(subset=['Fecha_Filtro'])
             
-            # Rellenar Textos
+            # Rellenar Textos (SE AGREGÓ 'Usuario 1' AQUÍ)
             cols_texto = [
                 'Fábrica', 'Máquina', 'Evento', 'Código', 'Producto', 'Referencia', 
                 'Nivel Evento 3', 'Nivel Evento 4', 'Nivel Evento 5', 'Nivel Evento 6', 
-                'Operador', 'Hora Inicio', 'Hora Fin', 'Nombre', 'Apellido', 'Turno'
+                'Operador', 'Hora Inicio', 'Hora Fin', 'Nombre', 'Apellido', 'Turno', 
+                'Usuario 1'
             ]
             for c_txt in cols_texto:
                 matches = [col for col in df.columns if c_txt.lower() in col.lower()]
@@ -406,16 +406,20 @@ with st.expander("📊 Perfo Promedio por Operador", expanded=True):
     else:
         st.info("No hay datos de operarios disponibles.")
 
-# --- 5.4 NUEVO: MAQUINAS POR OPERADOR POR FECHA (DESDE PRODUCCIÓN) ---
+# --- 5.4 NUEVO: MAQUINAS POR USUARIO 1 POR FECHA (DESDE PRODUCCIÓN) ---
 with st.expander("🏗️ Máquinas por Operador (Detalle Diario - Producción)", expanded=False):
     if not df_prod_f.empty:
-        # Detectar columnas dinámicamente en producción
-        c_op = next((c for c in df_prod_f.columns if 'operador' in c.lower()), None)
-        c_maq = next((c for c in df_prod_f.columns if 'maquina' in c.lower() or 'máquina' in c.lower()), None)
+        # 1. Buscar explícitamente la columna 'Usuario 1'
+        c_op_prod = next((c for c in df_prod_f.columns if 'usuario 1' in c.lower()), None)
+        
+        # 2. Buscar columna de Máquina
+        c_maq_prod = next((c for c in df_prod_f.columns if 'maquina' in c.lower() or 'máquina' in c.lower()), None)
+        
+        # 3. Buscar columna de Piezas (Buenas)
         c_piezas = next((c for c in df_prod_f.columns if 'buenas' in c.lower()), None)
         
-        if c_op and c_maq:
-            cols_to_use = [c_op, c_maq, 'Fecha_Filtro']
+        if c_op_prod and c_maq_prod:
+            cols_to_use = [c_op_prod, c_maq_prod, 'Fecha_Filtro']
             if c_piezas: cols_to_use.append(c_piezas)
 
             df_mach_op = df_prod_f[cols_to_use].copy()
@@ -426,12 +430,12 @@ with st.expander("🏗️ Máquinas por Operador (Detalle Diario - Producción)"
 
             # Agrupar
             if c_piezas:
-                grouped = df_mach_op.groupby([c_op, 'Fecha', c_maq])[c_piezas].sum().reset_index()
+                grouped = df_mach_op.groupby([c_op_prod, 'Fecha', c_maq_prod])[c_piezas].sum().reset_index()
             else:
-                grouped = df_mach_op.groupby([c_op, 'Fecha', c_maq]).size().reset_index(name='Registros')
+                grouped = df_mach_op.groupby([c_op_prod, 'Fecha', c_maq_prod]).size().reset_index(name='Registros')
             
             # Ordenar por Operador y Fecha
-            grouped = grouped.sort_values(by=[c_op, 'Fecha'], ascending=[True, False])
+            grouped = grouped.sort_values(by=[c_op_prod, 'Fecha'], ascending=[True, False])
             
             st.dataframe(
                 grouped,
@@ -442,7 +446,7 @@ with st.expander("🏗️ Máquinas por Operador (Detalle Diario - Producción)"
                 }
             )
         else:
-            st.warning("No se encontraron las columnas 'Operador' o 'Máquina' en la pestaña Producción.")
+            st.warning("No se encontraron las columnas 'Usuario 1' o 'Máquina' en la pestaña Producción.")
     else:
         st.info("No hay datos de producción disponibles para este periodo.")
 
