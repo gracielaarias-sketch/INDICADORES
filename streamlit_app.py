@@ -604,4 +604,4 @@ with st.expander("Ver Datos de Performance", expanded=False):
             st.write("Resumen estadístico:")
             st.write(df_perf_f[cols_numericas_perf].describe())
     else:
-        st.info("No hay datos de performance para el rango seleccionado
+        st.info("No hay datos de performance para el rango seleccionado")
