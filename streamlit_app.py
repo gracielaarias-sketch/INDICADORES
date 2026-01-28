@@ -407,7 +407,7 @@ with st.expander("📊 Perfo Promedio por Operador", expanded=True):
         st.info("No hay datos de operarios disponibles.")
 
 # --- 5.4 NUEVO: MAQUINAS POR USUARIO 1 POR FECHA (DESDE PRODUCCIÓN) ---
-with st.expander("🏗️ Máquinas por Operador (Detalle Diario - Producción)", expanded=False):
+with st.expander("🏗️ Máquinas por Operador", expanded=False):
     if not df_prod_f.empty:
         # Detectar columnas
         c_op_prod = next((c for c in df_prod_f.columns if 'usuario 1' in c.lower()), None)
