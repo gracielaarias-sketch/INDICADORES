@@ -39,9 +39,7 @@ def load_data():
         gid_datos = "0"             # Datos crudos de paros
         gid_oee = "1767654796"      # Datos de OEE
         gid_prod = "315437448"      # PRODUCCION
-        
-        # 👇👇👇 PEGA AQUÍ EL GID DE LA PESTAÑA OPERARIOS 👇👇👇
-        gid_operarios = "TU_GID_AQUI" 
+        gid_operarios = "354131379" # PERFO OPERARIOS
         # ---------------------------------------------------------
 
         base_export = url_base.split("/edit")[0] + "/export?format=csv&gid="
