@@ -398,7 +398,7 @@ with st.expander("📊 Perfo Promedio por Operador", expanded=True):
                     hide_index=True,
                     column_config=column_config
                 )
-                st.caption(f"Promedios calculados (Performance / OEE).")
+                st.caption(f"Promedios calculados.")
             else:
                 st.warning("Se filtraron todas las columnas numéricas.")
         else:
