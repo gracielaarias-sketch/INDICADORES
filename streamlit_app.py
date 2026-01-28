@@ -116,6 +116,126 @@ fábricas = st.sidebar.multiselect("Fábrica", opciones_fabrica, default=opcione
 df_temp = df_raw[df_raw['Fábrica'].isin(fábricas)]
 opciones_maquina = sorted(df_temp['Máquina'].unique())
 máquinas = st.sidebar.multiselect("Máquina", opciones_maquina, default=opciones_maquina)
+import streamlit as st
+import pandas as pd
+import plotly.express as px
+
+# ==========================================
+# 1. CONFIGURACIÓN Y ESTILOS
+# ==========================================
+st.set_page_config(
+    page_title="Indicadores FAMMA", 
+    layout="wide", 
+    page_icon="🏭", 
+    initial_sidebar_state="expanded"
+)
+
+st.markdown("""
+<style>
+    [data-testid="stMetricValue"] { font-size: 24px; }
+    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+    hr { margin-top: 2rem; margin-bottom: 2rem; }
+</style>
+""", unsafe_allow_html=True)
+
+# ==========================================
+# 2. CARGA DE DATOS ROBUSTA
+# ==========================================
+@st.cache_data(ttl=300)
+def load_data():
+    try:
+        try:
+            url_base = st.secrets["connections"]["gsheets"]["spreadsheet"].strip()
+        except Exception:
+            st.error("⚠️ No se encontró la configuración de secretos (.streamlit/secrets.toml).")
+            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+
+        # ---------------------------------------------------------
+        # 🟢 CONFIGURACIÓN DE GIDs
+        # ---------------------------------------------------------
+        gid_datos = "0"             # Datos crudos de paros
+        gid_oee = "1767654796"      # Datos de OEE
+        gid_prod = "315437448"      # PRODUCCION
+        
+        # 👇👇👇 PEGA AQUÍ EL GID DE LA PESTAÑA OPERARIOS 👇👇👇
+        gid_operarios = "TU_GID_AQUI" 
+        # ---------------------------------------------------------
+
+        base_export = url_base.split("/edit")[0] + "/export?format=csv&gid="
+        
+        def process_df(url):
+            try:
+                df = pd.read_csv(url)
+            except Exception:
+                return pd.DataFrame()
+            
+            # Limpieza Numérica
+            cols_num = [
+                'Tiempo (Min)', 'Cantidad', 'Piezas', 'Produccion', 'Total',
+                'Buenas', 'Retrabajo', 'Observadas', 'Tiempo de Ciclo', 'Ciclo',
+                'Eficiencia', 'Performance', 'Cumplimiento', 'Meta', 'Objetivo', 'OEE'
+            ]
+            for c in cols_num:
+                matches = [col for col in df.columns if c.lower() in col.lower()]
+                for match in matches:
+                    df[match] = df[match].astype(str).str.replace(',', '.')
+                    df[match] = df[match].str.replace('%', '')
+                    df[match] = pd.to_numeric(df[match], errors='coerce').fillna(0.0)
+            
+            # Limpieza Fechas
+            col_fecha = next((c for c in df.columns if 'fecha' in c.lower()), None)
+            if col_fecha:
+                df['Fecha_DT'] = pd.to_datetime(df[col_fecha], dayfirst=True, errors='coerce')
+                df['Fecha_Filtro'] = df['Fecha_DT'].dt.normalize()
+                df = df.dropna(subset=['Fecha_Filtro'])
+            
+            # Rellenar Textos
+            cols_texto = [
+                'Fábrica', 'Máquina', 'Evento', 'Código', 'Producto', 'Referencia', 
+                'Nivel Evento 3', 'Nivel Evento 4', 'Nivel Evento 5', 'Nivel Evento 6', 
+                'Operador', 'Hora Inicio', 'Hora Fin', 'Nombre', 'Apellido', 'Turno'
+            ]
+            for c_txt in cols_texto:
+                matches = [col for col in df.columns if c_txt.lower() in col.lower()]
+                for match in matches:
+                    df[match] = df[match].fillna('').astype(str)
+            return df
+
+        df1 = process_df(base_export + gid_datos)
+        df2 = process_df(base_export + gid_oee)
+        df3 = process_df(base_export + gid_prod)
+        df4 = process_df(base_export + gid_operarios)
+        
+        return df1, df2, df3, df4
+
+    except Exception as e:
+        st.error(f"Error cargando datos: {e}")
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+
+df_raw, df_oee_raw, df_prod_raw, df_operarios_raw = load_data()
+
+# ==========================================
+# 3. FILTROS
+# ==========================================
+if df_raw.empty:
+    st.warning("No hay datos cargados en la hoja principal.")
+    st.stop()
+
+st.sidebar.header("📅 Rango de tiempo")
+min_d = df_raw['Fecha_Filtro'].min().date()
+max_d = df_raw['Fecha_Filtro'].max().date()
+
+rango = st.sidebar.date_input("Periodo", [min_d, max_d], min_value=min_d, max_value=max_d)
+
+st.sidebar.divider()
+st.sidebar.header("⚙️ Filtros")
+
+opciones_fabrica = sorted(df_raw['Fábrica'].unique())
+fábricas = st.sidebar.multiselect("Fábrica", opciones_fabrica, default=opciones_fabrica)
+
+df_temp = df_raw[df_raw['Fábrica'].isin(fábricas)]
+opciones_maquina = sorted(df_temp['Máquina'].unique())
+máquinas = st.sidebar.multiselect("Máquina", opciones_maquina, default=opciones_maquina)
 
 # APLICAR FILTROS GLOBALES
 if isinstance(rango, (list, tuple)) and len(rango) == 2:
@@ -188,7 +308,7 @@ st.caption("Promedios del periodo")
 show_metric_row(get_metrics('GENERAL')) 
 
 # ------------------------------------------------------------------------
-# 📉 GRÁFICO HISTÓRICO OEE (MOVIDO AQUÍ)
+# 📉 GRÁFICO HISTÓRICO OEE
 # ------------------------------------------------------------------------
 with st.expander("📉 Ver Gráfico de Evolución Histórica OEE", expanded=False):
     if not df_oee_f.empty:
@@ -354,16 +474,23 @@ with st.expander("☕ Tiempos de Descanso por Operador (Baño y Refrigerio)"):
         st.warning("No se encontró la columna 'Operador'.")
 
 # ------------------------------------------------------------------------
-# 👷 PERFORMANCE DE OPERADORES (MOVIDO AQUÍ)
+# 👷 PERFORMANCE DE OPERADORES
 # ------------------------------------------------------------------------
 with st.expander("📊 Ver Tabla de Rendimiento Promedio por Operador", expanded=True):
     if not df_op_f.empty:
         # 1. Detectar Columna de Operador
         col_op = next((c for c in df_op_f.columns if any(x in c.lower() for x in ['operador', 'nombre', 'empleado'])), None)
         
-        # 2. Detectar Columnas Métricas
+        # 2. Detectar Columnas Métricas (CON FILTRO DE EXCLUSIÓN)
+        # Palabras a EXCLUIR: parada, ciclo, buenas, retrabajo, observada
+        exclude_terms = ['parada', 'ciclo', 'buenas', 'retrabajo', 'observad']
+        
         cols_metrics = [c for c in df_op_f.select_dtypes(include=['number']).columns 
-                        if 'fecha' not in c.lower() and 'year' not in c.lower() and 'gid' not in c.lower()]
+                        if 'fecha' not in c.lower() 
+                        and 'year' not in c.lower() 
+                        and 'gid' not in c.lower()
+                        # Exclusión estricta de términos solicitados:
+                        and not any(ex in c.lower() for ex in exclude_terms)]
 
         if col_op and cols_metrics:
             
@@ -390,28 +517,30 @@ with st.expander("📊 Ver Tabla de Rendimiento Promedio por Operador", expanded
                          column_config[col] = st.column_config.NumberColumn(col, format="%.1f %%")
                     else:
                          column_config[col] = st.column_config.NumberColumn(col, format="%.1%")
-                # Cantidades
+                # Cantidades (por si quedó alguna)
                 elif any(x in col_lower for x in ['piez', 'cant', 'tot', 'prod']):
                     column_config[col] = st.column_config.NumberColumn(col, format="%.0f")
 
             # Ordenar: Si existe OEE, por OEE. Si no, por la primera columna métrica.
-            col_sort = next((c for c in cols_metrics if 'oee' in c.lower()), cols_metrics[0])
-            df_resumen_op = df_resumen_op.sort_values(by=col_sort, ascending=False)
-            
-            # Reordenar columnas para que OEE vaya primero si existe
-            cols_ordenadas = [col_op] + [c for c in cols_metrics if 'oee' in c.lower()] + [c for c in cols_metrics if 'oee' not in c.lower()] + ['Días']
-            # Filtrar solo columnas que existan en el df
-            cols_finales = [c for c in cols_ordenadas if c in df_resumen_op.columns]
+            if cols_metrics:
+                col_sort = next((c for c in cols_metrics if 'oee' in c.lower()), cols_metrics[0])
+                df_resumen_op = df_resumen_op.sort_values(by=col_sort, ascending=False)
+                
+                # Reordenar columnas para que OEE vaya primero si existe
+                cols_ordenadas = [col_op] + [c for c in cols_metrics if 'oee' in c.lower()] + [c for c in cols_metrics if 'oee' not in c.lower()] + ['Días']
+                cols_finales = [c for c in cols_ordenadas if c in df_resumen_op.columns]
 
-            st.dataframe(
-                df_resumen_op[cols_finales],
-                use_container_width=True,
-                hide_index=True,
-                column_config=column_config
-            )
-            st.caption(f"Promedios calculados del periodo seleccionado.")
+                st.dataframe(
+                    df_resumen_op[cols_finales],
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config=column_config
+                )
+                st.caption(f"Promedios calculados del periodo seleccionado (excluyendo tiempos muertos y detalles de piezas).")
+            else:
+                st.warning("Se filtraron todas las columnas numéricas. Verifique los nombres en el archivo.")
         else:
-            st.warning("No se detectaron columnas de Operador o métricas.")
+            st.warning("No se detectaron columnas de Operador o métricas válidas tras el filtrado.")
     else:
         st.info("No hay datos de operarios disponibles.")
 # ------------------------------------------------------------------------
