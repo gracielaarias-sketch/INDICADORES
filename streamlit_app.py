@@ -35,7 +35,7 @@ def load_data():
         # ---------------------------------------------------------
         # 🟢 CONFIGURACIÓN DE GIDs
         # ---------------------------------------------------------
-        gid_datos = "0"             # Datos crudos de paros
+        gid_datos = "0"             # Datos crudos de paros (PESTAÑA DATOS)
         gid_oee = "1767654796"      # Datos de OEE
         gid_prod = "315437448"      # PRODUCCION
         # ---------------------------------------------------------
@@ -113,14 +113,13 @@ máquinas = st.sidebar.multiselect("Máquina", opciones_maquina, default=opcione
 if isinstance(rango, (list, tuple)) and len(rango) == 2:
     ini, fin = pd.to_datetime(rango[0]), pd.to_datetime(rango[1])
     
-    # 1. Paros
+    # 1. Paros (PESTAÑA DATOS)
     df_f = df_raw[(df_raw['Fecha_Filtro'] >= ini) & (df_raw['Fecha_Filtro'] <= fin)]
     df_f = df_f[df_f['Fábrica'].isin(fábricas) & df_f['Máquina'].isin(máquinas)]
     
     # 2. OEE
     if not df_oee_raw.empty and 'Fecha_Filtro' in df_oee_raw.columns:
         df_oee_f = df_oee_raw[(df_oee_raw['Fecha_Filtro'] >= ini) & (df_oee_raw['Fecha_Filtro'] <= fin)]
-        # Filtrar OEE por máquina también si la columna existe
         col_maq_oee = next((c for c in df_oee_f.columns if 'máquina' in c.lower()), None)
         if col_maq_oee:
              df_oee_f = df_oee_f[df_oee_f[col_maq_oee].isin(máquinas)]
@@ -194,74 +193,84 @@ with t2:
     with st.expander("Ver detalle"):
         st.markdown("**Celdas Robotizadas**")
         show_metric_row(get_metrics('CELDA'))
-        
         st.markdown("---")
-        
         st.markdown("**PRP**")
         show_metric_row(get_metrics('PRP'))
 
 # ==========================================
-# 🛑 NUEVA FUNCIONALIDAD AÑADIDA AQUÍ
+# 🛑 NUEVA FUNCIONALIDAD: DATOS DESDE LA PESTAÑA 'DATOS' (df_f)
 # ==========================================
 st.markdown("---")
-with st.expander("⏱️ Detalle de Horarios y Tiempos (Promedio por Máquina)", expanded=False):
-    if not df_oee_f.empty:
-        # Buscamos columnas de Hora y Total
-        c_ini = next((c for c in df_oee_f.columns if 'inicio' in c.lower()), None)
-        c_fin = next((c for c in df_oee_f.columns if 'fin' in c.lower()), None)
-        c_tot = next((c for c in df_oee_f.columns if 'total' in c.lower()), None)
-        c_maq = next((c for c in df_oee_f.columns if 'máquina' in c.lower()), None)
+with st.expander("⏱️ Detalle de Horarios y Tiempos (Calculado desde DATOS)", expanded=False):
+    if not df_f.empty:
+        # Usamos df_f que viene de la pestaña DATOS
+        c_ini = 'Hora Inicio'
+        c_fin = 'Hora Fin'
+        c_tiempo = 'Tiempo (Min)'
+        c_maq = 'Máquina'
+        c_fecha = 'Fecha_Filtro'
 
-        if c_ini and c_fin and c_tot and c_maq:
-            # Trabajamos con una copia para cálculos
-            df_time_calc = df_oee_f[[c_maq, c_ini, c_fin, c_tot]].copy()
+        # Verificamos que existan las columnas necesarias
+        if all(col in df_f.columns for col in [c_ini, c_fin, c_tiempo, c_maq, c_fecha]):
+            
+            # 1. Crear copia y convertir hora texto a minutos numéricos
+            df_calc = df_f[[c_fecha, c_maq, c_ini, c_fin, c_tiempo]].copy()
 
-            # Función helper: HH:MM -> Minutos
             def time_str_to_min(val):
                 try:
                     val = str(val).strip()
                     if ":" in val:
-                        h, m = val.split(":")[:2]
-                        return int(h) * 60 + int(m)
+                        parts = val.split(":")
+                        return int(parts[0]) * 60 + int(parts[1])
+                    return None
                 except:
                     return None
-                return None
 
-            # Convertir a minutos para promediar
-            df_time_calc['min_ini'] = df_time_calc[c_ini].apply(time_str_to_min)
-            df_time_calc['min_fin'] = df_time_calc[c_fin].apply(time_str_to_min)
+            df_calc['min_ini'] = df_calc[c_ini].apply(time_str_to_min)
+            df_calc['min_fin'] = df_calc[c_fin].apply(time_str_to_min)
             
-            # Agrupar por Máquina calculando promedios
-            df_resumen_tiempo = df_time_calc.groupby(c_maq).agg({
-                'min_ini': 'mean',
-                'min_fin': 'mean',
-                c_tot: 'mean'
+            # 2. PRIMER NIVEL DE AGREGACIÓN: POR DÍA Y MÁQUINA
+            # En la hoja "DATOS" hay muchos eventos por día.
+            # - Hora inicio del día = Mínimo de 'Hora Inicio' de ese día
+            # - Hora fin del día = Máximo de 'Hora Fin' de ese día
+            # - Tiempo Total = Suma de 'Tiempo (Min)' de ese día
+            df_daily = df_calc.groupby([c_fecha, c_maq]).agg({
+                'min_ini': 'min',      # El primer evento del día
+                'min_fin': 'max',      # El último evento del día
+                c_tiempo: 'sum'        # Suma de tiempos reportados
             }).reset_index()
 
-            # Función helper: Minutos -> HH:MM
+            # 3. SEGUNDO NIVEL DE AGREGACIÓN: PROMEDIO DEL RANGO SELECCIONADO
+            df_final_avg = df_daily.groupby(c_maq).agg({
+                'min_ini': 'mean',     # Promedio de horas de arranque
+                'min_fin': 'mean',     # Promedio de horas de cierre
+                c_tiempo: 'mean'       # Promedio de tiempo reportado diario
+            }).reset_index()
+
+            # 4. Formatear de nuevo a Texto (HH:MM)
             def min_to_time_str(val):
                 if pd.isna(val): return "--:--"
                 h = int(val // 60)
                 m = int(val % 60)
                 return f"{h:02d}:{m:02d}"
 
-            # Formatear para visualización
-            df_resumen_tiempo['Hora Inicio Promedio'] = df_resumen_tiempo['min_ini'].apply(min_to_time_str)
-            df_resumen_tiempo['Hora Fin Promedio'] = df_resumen_tiempo['min_fin'].apply(min_to_time_str)
+            df_final_avg['Promedio Inicio'] = df_final_avg['min_ini'].apply(min_to_time_str)
+            df_final_avg['Promedio Fin'] = df_final_avg['min_fin'].apply(min_to_time_str)
             
-            # Mostrar tabla final
+            # Mostrar tabla
             st.dataframe(
-                df_resumen_tiempo[[c_maq, 'Hora Inicio Promedio', 'Hora Fin Promedio', c_tot]],
+                df_final_avg[[c_maq, 'Promedio Inicio', 'Promedio Fin', c_tiempo]],
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    c_tot: st.column_config.NumberColumn("Tiempo Total Promedio (Min)", format="%.1f min")
+                    c_tiempo: st.column_config.NumberColumn("Tiempo Total Promedio (Min)", format="%.0f min")
                 }
             )
+            st.caption("*Cálculo basado en registros de la pestaña DATOS: Inicio (min día), Fin (max día) y Tiempo Total (suma día), promediados en el periodo.*")
         else:
-            st.warning("No se encontraron las columnas 'Hora Inicio', 'Hora Fin' o 'Total' en los datos de OEE.")
+            st.warning("Faltan columnas 'Hora Inicio' o 'Hora Fin' en la pestaña de DATOS.")
     else:
-        st.info("No hay datos de OEE para calcular horarios.")
+        st.info("No hay datos cargados en la pestaña principal.")
 
 # ==========================================
 # 5. GRÁFICO HISTÓRICO OEE (DESPLEGABLE)
