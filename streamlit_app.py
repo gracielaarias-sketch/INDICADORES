@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -31,7 +30,7 @@ def load_data():
             url_base = st.secrets["connections"]["gsheets"]["spreadsheet"].strip()
         except Exception:
             st.error("⚠️ No se encontró la configuración de secretos (.streamlit/secrets.toml).")
-            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
         # ---------------------------------------------------------
         # 🟢 CONFIGURACIÓN DE GIDs
@@ -39,6 +38,7 @@ def load_data():
         gid_datos = "0"             # Datos crudos de paros (PESTAÑA DATOS)
         gid_oee = "1767654796"      # Datos de OEE
         gid_prod = "315437448"      # PRODUCCION
+        gid_perf = "354131379"      # PERFORMANCE
         # ---------------------------------------------------------
 
         base_export = url_base.split("/edit")[0] + "/export?format=csv&gid="
@@ -49,10 +49,11 @@ def load_data():
             except Exception:
                 return pd.DataFrame()
             
-            # Limpieza Numérica
+            # Limpieza Numérica General
             cols_num = [
                 'Tiempo (Min)', 'Cantidad', 'Piezas', 'Produccion', 'Total',
-                'Buenas', 'Retrabajo', 'Observadas', 'Tiempo de Ciclo', 'Ciclo'
+                'Buenas', 'Retrabajo', 'Observadas', 'Tiempo de Ciclo', 'Ciclo',
+                'Performance', 'Velocidad', 'Ritmo' # Agregados posibles nombres de performance
             ]
             for c in cols_num:
                 matches = [col for col in df.columns if c.lower() in col.lower()]
@@ -82,14 +83,16 @@ def load_data():
         df1 = process_df(base_export + gid_datos)
         df2 = process_df(base_export + gid_oee)
         df3 = process_df(base_export + gid_prod)
+        df4 = process_df(base_export + gid_perf) # Nueva carga Performance
         
-        return df1, df2, df3
+        return df1, df2, df3, df4
 
     except Exception as e:
         st.error(f"Error cargando datos: {e}")
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-df_raw, df_oee_raw, df_prod_raw = load_data()
+# Desempaquetamos los 4 DataFrames
+df_raw, df_oee_raw, df_prod_raw, df_perf_raw = load_data()
 
 # ==========================================
 # 3. FILTROS
@@ -139,6 +142,16 @@ if isinstance(rango, (list, tuple)) and len(rango) == 2:
             df_prod_f = df_prod_f[df_prod_f[col_maq_prod].isin(máquinas)]
     else:
         df_prod_f = pd.DataFrame()
+
+    # 4. Performance (NUEVO)
+    if not df_perf_raw.empty and 'Fecha_Filtro' in df_perf_raw.columns:
+        df_perf_f = df_perf_raw[(df_perf_raw['Fecha_Filtro'] >= ini) & (df_perf_raw['Fecha_Filtro'] <= fin)]
+        col_maq_perf = next((c for c in df_perf_f.columns if 'máquina' in c.lower()), None)
+        if col_maq_perf:
+            df_perf_f = df_perf_f[df_perf_f[col_maq_perf].isin(máquinas)]
+    else:
+        df_perf_f = pd.DataFrame()
+
 else:
     st.info("Seleccione un rango de fechas válido.")
     st.stop()
@@ -203,7 +216,7 @@ with t2:
         show_metric_row(get_metrics('PRP'))
 
 # ==========================================
-# 📉 5. GRÁFICO HISTÓRICO OEE (MOVIDO AQUÍ)
+# 📉 5. GRÁFICO HISTÓRICO OEE
 # ==========================================
 st.markdown("---")
 with st.expander("📉 Ver Gráfico de Evolución Histórica OEE", expanded=False):
@@ -224,14 +237,14 @@ with st.expander("📉 Ver Gráfico de Evolución Histórica OEE", expanded=Fals
         st.info("No hay datos históricos para graficar.")
 
 # ==========================================
-# ⏸️ SEPARADOR SOLICITADO
+# ⏸️ SEPARADOR
 # ==========================================
 st.markdown("---") 
 
 # ==========================================
 # 🛑 FUNCIONALIDAD 1: INICIO Y FIN DE TURNO
 # ==========================================
-with st.expander("⏱️ Detalle de Horarios y Tiempos", expanded=False):
+with st.expander("⏱️ Detalle de Horarios y Tiempos (Calculado desde DATOS)", expanded=False):
     if not df_f.empty:
         c_ini = 'Hora Inicio'
         c_fin = 'Hora Fin'
@@ -297,10 +310,9 @@ with st.expander("⏱️ Detalle de Horarios y Tiempos", expanded=False):
 with st.expander("☕ Tiempos de Descanso por Operador (Baño y Refrigerio)"):
     if not df_f.empty and 'Operador' in df_f.columns:
         
-        tab_bano, tab_refri = st.tabs(["Baño", "Refrigerio"])
+        tab_bano, tab_refri = st.tabs(["🚽 Baño", "🥪 Refrigerio"])
 
         def crear_tabla_descanso(keyword, tab_destino):
-            # 🟢 CAMBIO: Buscar SOLO en la columna 'Nivel Evento 4'
             col_target = 'Nivel Evento 4'
             
             col_match = next((c for c in df_f.columns if col_target.lower() in c.lower()), None)
@@ -346,7 +358,7 @@ with st.expander("☕ Tiempos de Descanso por Operador (Baño y Refrigerio)"):
         st.warning("No se encontró la columna 'Operador' o datos suficientes.")
 
 # ==========================================
-# 6. SECCIÓN PRODUCCIÓN (CON BARRAS DESPLEGABLES)
+# 6. SECCIÓN PRODUCCIÓN
 # ==========================================
 st.markdown("---")
 st.header("Producción")
@@ -531,7 +543,7 @@ if not df_f.empty:
             st.plotly_chart(fig_hm, use_container_width=True)
 
 # ==========================================
-# 8. TABLA DETALLADA (PERSONALIZADA)
+# 8. TABLA DETALLADA
 # ==========================================
 st.divider()
 with st.expander("📂 Ver Registro Detallado de Eventos", expanded=True):
@@ -576,3 +588,20 @@ with st.expander("📂 Ver Registro Detallado de Eventos", expanded=True):
         )
     else:
         st.info("No hay datos para mostrar.")
+
+# ==========================================
+# 🚀 9. ANÁLISIS DE PERFORMANCE (NUEVA PESTAÑA)
+# ==========================================
+st.divider()
+st.header("Análisis de Performance")
+with st.expander("Ver Datos de Performance", expanded=False):
+    if not df_perf_f.empty:
+        st.dataframe(df_perf_f, use_container_width=True)
+        
+        # Ejemplo: Si hay columnas numéricas, mostrar metricas básicas
+        cols_numericas_perf = df_perf_f.select_dtypes(include=['float64', 'int64']).columns
+        if not cols_numericas_perf.empty:
+            st.write("Resumen estadístico:")
+            st.write(df_perf_f[cols_numericas_perf].describe())
+    else:
+        st.info("No hay datos de performance para el rango seleccionado
