@@ -67,7 +67,7 @@ def load_data():
                 df['Fecha_Filtro'] = df['Fecha_DT'].dt.normalize()
                 df = df.dropna(subset=['Fecha_Filtro'])
             
-            # Rellenar Textos (SE AGREGA NIVEL EVENTO 4 AQUÍ)
+            # Rellenar Textos
             cols_texto = [
                 'Fábrica', 'Máquina', 'Evento', 'Código', 'Producto', 'Referencia', 
                 'Nivel Evento 3', 'Nivel Evento 4', 'Nivel Evento 5', 'Nivel Evento 6', 
@@ -203,9 +203,34 @@ with t2:
         show_metric_row(get_metrics('PRP'))
 
 # ==========================================
-# 🛑 FUNCIONALIDAD 1: INICIO Y FIN DE TURNO
+# 📉 5. GRÁFICO HISTÓRICO OEE (MOVIDO AQUÍ)
 # ==========================================
 st.markdown("---")
+with st.expander("📉 Ver Gráfico de Evolución Histórica OEE", expanded=False):
+    if not df_oee_f.empty and 'OEE' in df_oee_f.columns:
+        df_trend = df_oee_f.copy()
+        if df_trend['OEE'].dtype == 'object':
+            df_trend['OEE_Num'] = df_trend['OEE'].astype(str).str.replace('%','').str.replace(',','.').astype(float)
+        else:
+            df_trend['OEE_Num'] = df_trend['OEE']
+        
+        trend_data = df_trend.groupby('Fecha_Filtro')['OEE_Num'].mean().reset_index()
+        
+        fig_trend = px.line(trend_data, x='Fecha_Filtro', y='OEE_Num', markers=True,
+                            title='Tendencia Diaria del OEE (%)', labels={'OEE_Num': 'OEE', 'Fecha_Filtro': 'Fecha'})
+        fig_trend.add_hline(y=85, line_dash="dot", annotation_text="Meta (85%)", line_color="green")
+        st.plotly_chart(fig_trend, use_container_width=True)
+    else:
+        st.info("No hay datos históricos para graficar.")
+
+# ==========================================
+# ⏸️ SEPARADOR SOLICITADO
+# ==========================================
+st.markdown("---") 
+
+# ==========================================
+# 🛑 FUNCIONALIDAD 1: INICIO Y FIN DE TURNO
+# ==========================================
 with st.expander("⏱️ Detalle de Horarios y Tiempos (Calculado desde DATOS)", expanded=False):
     if not df_f.empty:
         c_ini = 'Hora Inicio'
@@ -267,37 +292,32 @@ with st.expander("⏱️ Detalle de Horarios y Tiempos (Calculado desde DATOS)",
         st.info("No hay datos cargados en la pestaña principal.")
 
 # ==========================================
-# 🛑 FUNCIONALIDAD 2: BAÑO Y REFRIGERIO (NUEVO)
+# 🛑 FUNCIONALIDAD 2: BAÑO Y REFRIGERIO
 # ==========================================
-st.markdown("---")
 with st.expander("☕ Tiempos de Descanso por Operador (Baño y Refrigerio)"):
     if not df_f.empty and 'Operador' in df_f.columns:
         
-        tab_bano, tab_refri = st.tabs(["Baño", "Refrigerio"])
+        tab_bano, tab_refri = st.tabs(["🚽 Baño", "🥪 Refrigerio"])
 
         def crear_tabla_descanso(keyword, tab_destino):
             # 🟢 CAMBIO: Buscar SOLO en la columna 'Nivel Evento 4'
             col_target = 'Nivel Evento 4'
             
-            # Verificar si existe la columna (insensible a mayúsculas/minúsculas)
             col_match = next((c for c in df_f.columns if col_target.lower() in c.lower()), None)
             
             if not col_match:
                 with tab_destino: st.warning(f"No se encontró la columna '{col_target}' en los datos.")
                 return
 
-            # Filtrar donde la columna 'Nivel Evento 4' contenga la palabra clave
             mask = df_f[col_match].astype(str).str.contains(keyword, case=False)
             df_sub = df_f[mask]
 
             if not df_sub.empty:
-                # Agrupar por operador
                 resumen = df_sub.groupby('Operador')['Tiempo (Min)'].agg(['sum', 'mean', 'count']).reset_index()
                 resumen.columns = ['Operador', 'Tiempo Total (Min)', 'Promedio por vez (Min)', 'Eventos']
                 
                 resumen = resumen.sort_values('Tiempo Total (Min)', ascending=False)
                 
-                # Calcular metricas antes para evitar errores de sintaxis
                 val_total = resumen['Tiempo Total (Min)'].sum()
                 val_promedio = resumen['Tiempo Total (Min)'].mean()
 
@@ -319,33 +339,11 @@ with st.expander("☕ Tiempos de Descanso por Operador (Baño y Refrigerio)"):
                 with tab_destino:
                     st.info(f"No se encontraron registros que contengan '{keyword}' en la columna '{col_target}'.")
 
-        # Generar las tablas
         crear_tabla_descanso("Baño", tab_bano)
         crear_tabla_descanso("Refrigerio", tab_refri)
 
     else:
         st.warning("No se encontró la columna 'Operador' o datos suficientes.")
-
-# ==========================================
-# 5. GRÁFICO HISTÓRICO OEE (DESPLEGABLE)
-# ==========================================
-st.markdown("---")
-with st.expander("📉 Ver Gráfico de Evolución Histórica OEE", expanded=False):
-    if not df_oee_f.empty and 'OEE' in df_oee_f.columns:
-        df_trend = df_oee_f.copy()
-        if df_trend['OEE'].dtype == 'object':
-            df_trend['OEE_Num'] = df_trend['OEE'].astype(str).str.replace('%','').str.replace(',','.').astype(float)
-        else:
-            df_trend['OEE_Num'] = df_trend['OEE']
-        
-        trend_data = df_trend.groupby('Fecha_Filtro')['OEE_Num'].mean().reset_index()
-        
-        fig_trend = px.line(trend_data, x='Fecha_Filtro', y='OEE_Num', markers=True,
-                            title='Tendencia Diaria del OEE (%)', labels={'OEE_Num': 'OEE', 'Fecha_Filtro': 'Fecha'})
-        fig_trend.add_hline(y=85, line_dash="dot", annotation_text="Meta (85%)", line_color="green")
-        st.plotly_chart(fig_trend, use_container_width=True)
-    else:
-        st.info("No hay datos históricos para graficar.")
 
 # ==========================================
 # 6. SECCIÓN PRODUCCIÓN (CON BARRAS DESPLEGABLES)
@@ -552,7 +550,7 @@ with st.expander("📂 Ver Registro Detallado de Eventos", expanded=True):
             'Hora Fin': 'Hora Fin',
             'Tiempo (Min)': 'Tiempo (min)',
             'Evento': 'Evento',
-            'Nivel Evento 4': 'Subcategoría', # Se agregó para visibilidad si se desea
+            'Nivel Evento 4': 'Subcategoría', 
             'Nivel Evento 5': 'Categoría Falla',
             'Nivel Evento 6': 'Detalle Falla',
             'Operador': 'Operador'
