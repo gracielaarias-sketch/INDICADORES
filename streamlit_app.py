@@ -1,12 +1,4 @@
-Entendido. He realizado dos ajustes importantes para cumplir con tu requerimiento:
 
-En la carga de datos (load_data): Agregué 'Nivel Evento 4' a la lista de columnas de texto para asegurar que se lea correctamente y se limpien los valores vacíos.
-
-En la sección de Baño y Refrigerio: Modifiqué la lógica para que busque las palabras clave ("Baño" o "Refrigerio") exclusivamente en la columna Nivel Evento 4.
-
-Aquí tienes el código completo corregido y listo para usar:
-
-Python
 import streamlit as st
 import pandas as pd
 import plotly.express as px
