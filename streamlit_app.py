@@ -401,4 +401,4 @@ if not df_prod_f.empty:
                     hide_index=True,
                     column_config={
                         col_ciclo: st.column_config.NumberColumn("Tiempo Ciclo (s)", format="%.1f s"),
-                        col_buenas: st.column_config.NumberColumn
+                        col_buenas: st.column_config.NumberColumn}
