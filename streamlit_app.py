@@ -39,7 +39,9 @@ def load_data():
         gid_datos = "0"             # Datos crudos de paros
         gid_oee = "1767654796"      # Datos de OEE
         gid_prod = "315437448"      # PRODUCCION
-        gid_operarios = "354131379" 
+        
+        # 👇👇👇 PEGA AQUÍ EL GID DE LA PESTAÑA OPERARIOS 👇👇👇
+        gid_operarios = "TU_GID_AQUI" 
         # ---------------------------------------------------------
 
         base_export = url_base.split("/edit")[0] + "/export?format=csv&gid="
@@ -106,8 +108,8 @@ st.sidebar.header("📅 Rango de tiempo")
 min_d = df_raw['Fecha_Filtro'].min().date()
 max_d = df_raw['Fecha_Filtro'].max().date()
 
-# Se agrega key para evitar duplicados si el script recarga
-rango = st.sidebar.date_input("Periodo", [min_d, max_d], min_value=min_d, max_value=max_d, key="main_date_filter")
+# Key única para evitar errores de duplicado
+rango = st.sidebar.date_input("Periodo", [min_d, max_d], min_value=min_d, max_value=max_d, key="main_date_filter_unique")
 
 st.sidebar.divider()
 st.sidebar.header("⚙️ Filtros")
@@ -194,18 +196,14 @@ show_metric_row(get_metrics('GENERAL'))
 # ------------------------------------------------------------------------
 with st.expander("📉 Ver Gráfico de Evolución Histórica OEE", expanded=False):
     if not df_oee_f.empty:
-        # Buscar columna OEE
         col_oee_trend = next((c for c in df_oee_f.columns if 'OEE' in c.upper()), None)
-        
         if col_oee_trend:
              df_trend = df_oee_f.copy()
-             # Asegurar numérico
              if df_trend[col_oee_trend].dtype == 'object':
                 df_trend['OEE_Num'] = df_trend[col_oee_trend].astype(str).str.replace('%','').str.replace(',','.').astype(float)
              else:
                 df_trend['OEE_Num'] = df_trend[col_oee_trend]
              
-             # Agrupar por fecha
              trend_data = df_trend.groupby('Fecha_Filtro')['OEE_Num'].mean().reset_index()
              
              fig_trend = px.line(trend_data, x='Fecha_Filtro', y='OEE_Num', markers=True,
@@ -243,9 +241,11 @@ with t2:
         show_metric_row(get_metrics('PRP'))
 
 # ==========================================
-# 5. INICIO Y FIN DE TURNO
+# 5. BLOQUE DE OPERADORES (3 EXPANDERS SIN SEPARACIÓN INTERMEDIA)
 # ==========================================
-st.markdown("---")
+st.markdown("---") # Separador superior del bloque
+
+# --- 5.1 INICIO Y FIN DE TURNO ---
 with st.expander("⏱️ Detalle de Horarios y Tiempos (Calculado desde DATOS)", expanded=False):
     if not df_f.empty:
         c_ini = 'Hora Inicio'
@@ -304,10 +304,7 @@ with st.expander("⏱️ Detalle de Horarios y Tiempos (Calculado desde DATOS)",
     else:
         st.info("No hay datos cargados.")
 
-# ==========================================
-# 6. BAÑO Y REFRIGERIO
-# ==========================================
-st.markdown("---")
+# --- 5.2 BAÑO Y REFRIGERIO (SIN SEPARADOR) ---
 with st.expander("☕ Tiempos de Descanso por Operador (Baño y Refrigerio)"):
     if not df_f.empty and 'Operador' in df_f.columns:
         
@@ -355,45 +352,34 @@ with st.expander("☕ Tiempos de Descanso por Operador (Baño y Refrigerio)"):
     else:
         st.warning("No se encontró la columna 'Operador'.")
 
-# ------------------------------------------------------------------------
-# 👷 PERFORMANCE DE OPERADORES
-# ------------------------------------------------------------------------
+# --- 5.3 PERFORMANCE DE OPERADORES (SIN SEPARADOR) ---
 with st.expander("📊 Ver Tabla de Rendimiento Promedio por Operador", expanded=True):
     if not df_op_f.empty:
-        # 1. Detectar Columna de Operador
         col_op = next((c for c in df_op_f.columns if any(x in c.lower() for x in ['operador', 'nombre', 'empleado'])), None)
         
-        # 2. Detectar Columnas Métricas (CON FILTRO DE EXCLUSIÓN)
-        # 🛑 AQUÍ SE EXCLUYEN LAS COLUMNAS QUE PEDISTE
+        # Filtro de exclusión de columnas no deseadas
         exclude_terms = ['parada', 'ciclo', 'buenas', 'retrabajo', 'observad', 'cantidad', 'produccion']
         
         cols_metrics = [c for c in df_op_f.select_dtypes(include=['number']).columns 
                         if 'fecha' not in c.lower() 
                         and 'year' not in c.lower() 
                         and 'gid' not in c.lower()
-                        # Exclusión de términos
                         and not any(ex in c.lower() for ex in exclude_terms)]
 
         if col_op and cols_metrics:
-            
-            # 3. Agrupación y Cálculo de PROMEDIO
             df_resumen_op = df_op_f.groupby(col_op)[cols_metrics].mean().reset_index()
             
-            # Contar días trabajados
             dias_trabajados = df_op_f.groupby(col_op)['Fecha_Filtro'].nunique().reset_index(name='Días')
             df_resumen_op = pd.merge(df_resumen_op, dias_trabajados, on=col_op)
 
-            # 4. Configuración visual
             column_config = {}
             for col in cols_metrics:
                 col_lower = col.lower()
-                # Prioridad a OEE si existe
                 if 'oee' in col_lower:
                     if df_resumen_op[col].mean() > 1.0:
                          column_config[col] = st.column_config.NumberColumn(col, format="%.1f %%")
                     else:
                          column_config[col] = st.column_config.NumberColumn(col, format="%.1%")
-                # Otros porcentajes
                 elif any(x in col_lower for x in ['efic', 'perf', 'cumpl', 'meta']):
                     if df_resumen_op[col].mean() > 1.0:
                          column_config[col] = st.column_config.NumberColumn(col, format="%.1f %%")
@@ -402,12 +388,10 @@ with st.expander("📊 Ver Tabla de Rendimiento Promedio por Operador", expanded
                 else:
                     column_config[col] = st.column_config.NumberColumn(col, format="%.0f")
 
-            # Ordenar: Si existe OEE, por OEE. Si no, por la primera columna métrica.
             if cols_metrics:
                 col_sort = next((c for c in cols_metrics if 'oee' in c.lower()), cols_metrics[0])
                 df_resumen_op = df_resumen_op.sort_values(by=col_sort, ascending=False)
                 
-                # Reordenar columnas para que OEE vaya primero si existe
                 cols_ordenadas = [col_op] + [c for c in cols_metrics if 'oee' in c.lower()] + [c for c in cols_metrics if 'oee' not in c.lower()] + ['Días']
                 cols_finales = [c for c in cols_ordenadas if c in df_resumen_op.columns]
 
@@ -417,19 +401,18 @@ with st.expander("📊 Ver Tabla de Rendimiento Promedio por Operador", expanded
                     hide_index=True,
                     column_config=column_config
                 )
-                st.caption(f"Promedios calculados del periodo seleccionado (OEE y Performance únicamente).")
+                st.caption(f"Promedios calculados (Performance / OEE).")
             else:
-                st.warning("Se filtraron todas las columnas numéricas. Verifique los nombres en el archivo.")
+                st.warning("Se filtraron todas las columnas numéricas.")
         else:
-            st.warning("No se detectaron columnas de Operador o métricas válidas tras el filtrado.")
+            st.warning("No se detectaron columnas de Operador o métricas válidas.")
     else:
         st.info("No hay datos de operarios disponibles.")
-# ------------------------------------------------------------------------
 
 # ==========================================
-# 7. SECCIÓN PRODUCCIÓN
+# 6. SECCIÓN PRODUCCIÓN
 # ==========================================
-st.markdown("---")
+st.markdown("---") # Separador inferior del bloque
 st.header("Producción")
 
 if not df_prod_f.empty:
@@ -485,7 +468,7 @@ else:
     st.info("No hay datos de producción.")
 
 # ==========================================
-# 8. ANÁLISIS DE TIEMPOS Y PAROS
+# 7. ANÁLISIS DE TIEMPOS Y PAROS
 # ==========================================
 st.markdown("---")
 st.header("⏱️ Análisis de Tiempos y Fallas")
@@ -520,7 +503,7 @@ if not df_f.empty:
         st.plotly_chart(fig_pareto, use_container_width=True)
 
 # ==========================================
-# 9. TABLA DETALLADA
+# 8. TABLA DETALLADA
 # ==========================================
 st.divider()
 with st.expander("📂 Ver Registro Detallado de Eventos", expanded=True):
