@@ -244,7 +244,7 @@ with t2:
 st.markdown("---") # Separador superior del bloque
 
 # --- 5.1 INICIO Y FIN DE TURNO ---
-with st.expander("⏱️ Detalle de Horarios y Tiempos (Calculado desde DATOS)", expanded=False):
+with st.expander("⏱️ Detalle de Horarios y Tiempos", expanded=False):
     if not df_f.empty:
         c_ini = 'Hora Inicio'
         c_fin = 'Hora Fin'
@@ -303,7 +303,7 @@ with st.expander("⏱️ Detalle de Horarios y Tiempos (Calculado desde DATOS)",
         st.info("No hay datos cargados.")
 
 # --- 5.2 BAÑO Y REFRIGERIO (SIN SEPARADOR) ---
-with st.expander("☕ Tiempos de Descanso por Operador (Baño y Refrigerio)"):
+with st.expander("☕ Tiempos de Baño y Refrigerio"):
     if not df_f.empty and 'Operador' in df_f.columns:
         
         tab_bano, tab_refri = st.tabs(["Baño", "Refrigerio"])
@@ -351,7 +351,7 @@ with st.expander("☕ Tiempos de Descanso por Operador (Baño y Refrigerio)"):
         st.warning("No se encontró la columna 'Operador'.")
 
 # --- 5.3 PERFORMANCE DE OPERADORES (SIN SEPARADOR) ---
-with st.expander("📊 Ver Tabla de Rendimiento Promedio por Operador", expanded=True):
+with st.expander("📊 Perfo Promedio por Operador", expanded=True):
     if not df_op_f.empty:
         col_op = next((c for c in df_op_f.columns if any(x in c.lower() for x in ['operador', 'nombre', 'empleado'])), None)
         
@@ -469,7 +469,7 @@ else:
 # 7. ANÁLISIS DE TIEMPOS Y PAROS
 # ==========================================
 st.markdown("---")
-st.header("⏱️ Análisis de Tiempos y Fallas")
+st.header("Análisis de Tiempos y Fallas")
 
 if not df_f.empty:
     t_prod = df_f[df_f['Evento'].astype(str).str.contains('Producción', case=False)]['Tiempo (Min)'].sum()
