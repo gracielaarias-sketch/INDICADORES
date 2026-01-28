@@ -231,7 +231,7 @@ st.markdown("---")
 # ==========================================
 # 🛑 FUNCIONALIDAD 1: INICIO Y FIN DE TURNO
 # ==========================================
-with st.expander("⏱️ Detalle de Horarios y Tiempos (Calculado desde DATOS)", expanded=False):
+with st.expander("⏱️ Detalle de Horarios y Tiempos", expanded=False):
     if not df_f.empty:
         c_ini = 'Hora Inicio'
         c_fin = 'Hora Fin'
@@ -297,7 +297,7 @@ with st.expander("⏱️ Detalle de Horarios y Tiempos (Calculado desde DATOS)",
 with st.expander("☕ Tiempos de Descanso por Operador (Baño y Refrigerio)"):
     if not df_f.empty and 'Operador' in df_f.columns:
         
-        tab_bano, tab_refri = st.tabs(["🚽 Baño", "🥪 Refrigerio"])
+        tab_bano, tab_refri = st.tabs(["Baño", "Refrigerio"])
 
         def crear_tabla_descanso(keyword, tab_destino):
             # 🟢 CAMBIO: Buscar SOLO en la columna 'Nivel Evento 4'
