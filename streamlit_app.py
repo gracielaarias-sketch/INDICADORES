@@ -201,7 +201,7 @@ with t2:
 # 🛑 NUEVA FUNCIONALIDAD: DATOS DESDE LA PESTAÑA 'DATOS' (df_f)
 # ==========================================
 st.markdown("---")
-with st.expander("⏱️ Detalle de Horarios y Tiempos (Calculado desde DATOS)", expanded=False):
+with st.expander("Detalle de Horarios y Tiempos - RTO)", expanded=False):
     if not df_f.empty:
         # Usamos df_f que viene de la pestaña DATOS
         c_ini = 'Hora Inicio'
