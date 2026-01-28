@@ -198,22 +198,19 @@ with t2:
         show_metric_row(get_metrics('PRP'))
 
 # ==========================================
-# 🛑 NUEVA FUNCIONALIDAD: DATOS DESDE LA PESTAÑA 'DATOS' (df_f)
+# 🛑 FUNCIONALIDAD 1: INICIO Y FIN DE TURNO
 # ==========================================
 st.markdown("---")
-with st.expander("Detalle de Horarios y Tiempos - RTO)", expanded=False):
+with st.expander("⏱️ Detalle de Horarios y Tiempos (Calculado desde DATOS)", expanded=False):
     if not df_f.empty:
-        # Usamos df_f que viene de la pestaña DATOS
         c_ini = 'Hora Inicio'
         c_fin = 'Hora Fin'
         c_tiempo = 'Tiempo (Min)'
         c_maq = 'Máquina'
         c_fecha = 'Fecha_Filtro'
 
-        # Verificamos que existan las columnas necesarias
         if all(col in df_f.columns for col in [c_ini, c_fin, c_tiempo, c_maq, c_fecha]):
             
-            # 1. Crear copia y convertir hora texto a minutos numéricos
             df_calc = df_f[[c_fecha, c_maq, c_ini, c_fin, c_tiempo]].copy()
 
             def time_str_to_min(val):
@@ -229,25 +226,18 @@ with st.expander("Detalle de Horarios y Tiempos - RTO)", expanded=False):
             df_calc['min_ini'] = df_calc[c_ini].apply(time_str_to_min)
             df_calc['min_fin'] = df_calc[c_fin].apply(time_str_to_min)
             
-            # 2. PRIMER NIVEL DE AGREGACIÓN: POR DÍA Y MÁQUINA
-            # En la hoja "DATOS" hay muchos eventos por día.
-            # - Hora inicio del día = Mínimo de 'Hora Inicio' de ese día
-            # - Hora fin del día = Máximo de 'Hora Fin' de ese día
-            # - Tiempo Total = Suma de 'Tiempo (Min)' de ese día
             df_daily = df_calc.groupby([c_fecha, c_maq]).agg({
-                'min_ini': 'min',      # El primer evento del día
-                'min_fin': 'max',      # El último evento del día
-                c_tiempo: 'sum'        # Suma de tiempos reportados
+                'min_ini': 'min',      
+                'min_fin': 'max',      
+                c_tiempo: 'sum'        
             }).reset_index()
 
-            # 3. SEGUNDO NIVEL DE AGREGACIÓN: PROMEDIO DEL RANGO SELECCIONADO
             df_final_avg = df_daily.groupby(c_maq).agg({
-                'min_ini': 'mean',     # Promedio de horas de arranque
-                'min_fin': 'mean',     # Promedio de horas de cierre
-                c_tiempo: 'mean'       # Promedio de tiempo reportado diario
+                'min_ini': 'mean',     
+                'min_fin': 'mean',     
+                c_tiempo: 'mean'       
             }).reset_index()
 
-            # 4. Formatear de nuevo a Texto (HH:MM)
             def min_to_time_str(val):
                 if pd.isna(val): return "--:--"
                 h = int(val // 60)
@@ -257,7 +247,6 @@ with st.expander("Detalle de Horarios y Tiempos - RTO)", expanded=False):
             df_final_avg['Promedio Inicio'] = df_final_avg['min_ini'].apply(min_to_time_str)
             df_final_avg['Promedio Fin'] = df_final_avg['min_fin'].apply(min_to_time_str)
             
-            # Mostrar tabla
             st.dataframe(
                 df_final_avg[[c_maq, 'Promedio Inicio', 'Promedio Fin', c_tiempo]],
                 use_container_width=True,
@@ -271,6 +260,62 @@ with st.expander("Detalle de Horarios y Tiempos - RTO)", expanded=False):
             st.warning("Faltan columnas 'Hora Inicio' o 'Hora Fin' en la pestaña de DATOS.")
     else:
         st.info("No hay datos cargados en la pestaña principal.")
+
+# ==========================================
+# 🛑 FUNCIONALIDAD 2: BAÑO Y REFRIGERIO (NUEVO)
+# ==========================================
+st.markdown("---")
+with st.expander("☕ Tiempos de Descanso por Operador (Baño y Refrigerio)"):
+    if not df_f.empty and 'Operador' in df_f.columns:
+        
+        tab_bano, tab_refri = st.tabs(["🚽 Baño", "🥪 Refrigerio"])
+
+        def crear_tabla_descanso(keyword, tab_destino):
+            # Buscar la palabra clave en varias columnas de eventos
+            cols_check = [c for c in df_f.columns if 'Evento' in c]
+            if not cols_check:
+                with tab_destino: st.warning("No se encontraron columnas de 'Evento'.")
+                return
+
+            # Crear mascara: True si la palabra clave está en alguna columna de evento
+            mask = pd.Series([False] * len(df_f))
+            for col in cols_check:
+                mask = mask | df_f[col].astype(str).str.contains(keyword, case=False)
+            
+            df_sub = df_f[mask]
+
+            if not df_sub.empty:
+                # Agrupar por operador
+                resumen = df_sub.groupby('Operador')['Tiempo (Min)'].agg(['sum', 'mean', 'count']).reset_index()
+                resumen.columns = ['Operador', 'Tiempo Total (Min)', 'Promedio por vez (Min)', 'Eventos']
+                
+                # Ordenar por tiempo total descendente
+                resumen = resumen.sort_values('Tiempo Total (Min)', ascending=False)
+
+                with tab_destino:
+                    c1, c2 = st.columns(2)
+                    c1.metric(f"Total Minutos ({keyword})", f"{resumen['Tiempo Total (Min)'].sum():,.0f}")
+                    c2.metric(f"Promedio General ({keyword})", f"{resumen['Tiempo Total (Min)'].mean():,.1f} min")
+                    
+                    st.dataframe(
+                        resumen,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Tiempo Total (Min)": st.column_config.NumberColumn(format="%.0f min"),
+                            "Promedio por vez (Min)": st.column_config.NumberColumn(format="%.1f min")
+                        }
+                    )
+            else:
+                with tab_destino:
+                    st.info(f"No se encontraron registros que contengan '{keyword}' en este periodo.")
+
+        # Generar las tablas
+        crear_tabla_descanso("Baño", tab_bano)
+        crear_tabla_descanso("Refrigerio", tab_refri)
+
+    else:
+        st.warning("No se encontró la columna 'Operador' o datos suficientes.")
 
 # ==========================================
 # 5. GRÁFICO HISTÓRICO OEE (DESPLEGABLE)
@@ -356,170 +401,4 @@ if not df_prod_f.empty:
                     hide_index=True,
                     column_config={
                         col_ciclo: st.column_config.NumberColumn("Tiempo Ciclo (s)", format="%.1f s"),
-                        col_buenas: st.column_config.NumberColumn("Buenas", format="%d"),
-                        col_retrabajo: st.column_config.NumberColumn("Retrabajo", format="%d"),
-                        col_observadas: st.column_config.NumberColumn("Observadas", format="%d"),
-                    }
-                )
-
-        else:
-            st.warning("Se encontraron Máquina y Código, pero no las columnas de métricas.")
-    else:
-        st.warning(f"No se detectaron las columnas 'Máquina' y 'Código'.")
-else:
-    st.info("No hay datos de producción disponibles.")
-
-# ==========================================
-# 7. ANÁLISIS DE TIEMPOS Y PAROS
-# ==========================================
-st.markdown("---")
-st.header("⏱️ Análisis de Tiempos y Fallas")
-
-if not df_f.empty:
-    t_prod = df_f[df_f['Evento'].astype(str).str.contains('Producción', case=False)]['Tiempo (Min)'].sum()
-    t_fallas = df_f[df_f['Nivel Evento 3'].astype(str).str.contains('FALLA', case=False)]['Tiempo (Min)'].sum()
-    
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Minutos Producción", f"{t_prod:,.0f}")
-    c2.metric("Minutos Fallas", f"{t_fallas:,.0f}", delta_color="inverse")
-    c3.metric("Total Eventos", len(df_f))
-
-    g1, g2 = st.columns(2)
-    with g1:
-        st.plotly_chart(px.pie(df_f, values='Tiempo (Min)', names='Evento', title="Distribución de Tiempo", hole=0.4), use_container_width=True)
-    with g2:
-        if 'Operador' in df_f.columns:
-             st.plotly_chart(px.bar(df_f, x='Operador', y='Tiempo (Min)', color='Evento', title="Tiempos por Operador"), use_container_width=True)
-
-    col_falla = 'Nivel Evento 6' if 'Nivel Evento 6' in df_f.columns else df_f.columns[5]
-    col_cat_falla = 'Nivel Evento 5' if 'Nivel Evento 5' in df_f.columns else None
-
-    # Filtrar solo eventos tipo FALLA
-    df_fallas = df_f[df_f['Nivel Evento 3'].astype(str).str.contains('FALLA', case=False)].copy()
-    
-    # CREAR COLUMNA COMBINADA PARA VISUALIZACIÓN
-    if col_cat_falla:
-        df_fallas['Etiqueta_Falla'] = df_fallas[col_cat_falla].astype(str) + " - " + df_fallas[col_falla].astype(str)
-    else:
-        df_fallas['Etiqueta_Falla'] = df_fallas[col_falla]
-
-    if not df_fallas.empty:
-        st.divider()
-
-        if col_cat_falla:
-            st.subheader("Distribución de Fallas por Categoría (Total %)")
-            df_cat = df_fallas.groupby(col_cat_falla)['Tiempo (Min)'].sum().reset_index()
-            total_tiempo_fallas = df_cat['Tiempo (Min)'].sum()
-            df_cat['Porcentaje'] = (df_cat['Tiempo (Min)'] / total_tiempo_fallas) * 100
-            df_cat = df_cat.sort_values('Porcentaje', ascending=True)
-
-            fig_cat = px.bar(
-                df_cat,
-                x='Porcentaje',
-                y=col_cat_falla,
-                orientation='h',
-                text=df_cat['Porcentaje'].apply(lambda x: f'{x:.1f}%'),
-                title="Peso porcentual por Categoría de Falla",
-                color='Porcentaje',
-                color_continuous_scale='Blues'
-            )
-            fig_cat.update_layout(xaxis_title="% del Tiempo Total de Fallas")
-            st.plotly_chart(fig_cat, use_container_width=True)
-            st.markdown("---")
-
-        st.subheader(f"Top 15 Causas de fallo")
-        top15 = df_fallas.groupby('Etiqueta_Falla')['Tiempo (Min)'].sum().reset_index()
-        top15 = top15.nlargest(15, 'Tiempo (Min)').sort_values('Tiempo (Min)', ascending=True)
-
-        fig_pareto = px.bar(
-            top15, 
-            x='Tiempo (Min)', 
-            y='Etiqueta_Falla', 
-            orientation='h', 
-            text_auto='.0f', 
-            color='Tiempo (Min)', 
-            color_continuous_scale='Reds', 
-            title="Minutos perdidos por tipo de falla (Categoría - Detalle)",
-            labels={'Etiqueta_Falla': 'Falla'}
-        )
-        st.plotly_chart(fig_pareto, use_container_width=True)
-
-        with st.expander("Top 10 Fallas por Máquina"):
-            list_maquinas = sorted(df_fallas['Máquina'].unique())
-            if list_maquinas:
-                maq_sel = st.selectbox("Seleccione la Máquina a analizar:", list_maquinas)
-                df_maq_falla = df_fallas[df_fallas['Máquina'] == maq_sel]
-                top10_maq = df_maq_falla.groupby('Etiqueta_Falla')['Tiempo (Min)'].sum().reset_index()
-                top10_maq = top10_maq.nlargest(10, 'Tiempo (Min)').sort_values('Tiempo (Min)', ascending=True)
-                
-                if not top10_maq.empty:
-                    fig_top10 = px.bar(
-                        top10_maq, 
-                        x='Tiempo (Min)', 
-                        y='Etiqueta_Falla', 
-                        orientation='h', 
-                        text_auto='.0f',
-                        title=f"Top 10 Fallas: {maq_sel}",
-                        color='Tiempo (Min)',
-                        color_continuous_scale='Oranges',
-                        labels={'Etiqueta_Falla': 'Falla'}
-                    )
-                    st.plotly_chart(fig_top10, use_container_width=True)
-                else:
-                    st.info(f"No hay registros de fallas para {maq_sel} en este periodo.")
-            else:
-                st.warning("No hay datos de fallas para las máquinas seleccionadas.")
-
-        st.subheader("Mapa de Calor")
-        pivot_hm = df_fallas.groupby(['Máquina', col_falla])['Tiempo (Min)'].sum().reset_index()
-        pivot_hm = pivot_hm[pivot_hm['Tiempo (Min)'] > 10]
-        
-        if not pivot_hm.empty:
-            fig_hm = px.density_heatmap(pivot_hm, x=col_falla, y="Máquina", z="Tiempo (Min)", color_continuous_scale="Viridis", text_auto=True)
-            st.plotly_chart(fig_hm, use_container_width=True)
-
-# ==========================================
-# 8. TABLA DETALLADA (PERSONALIZADA)
-# ==========================================
-st.divider()
-with st.expander("📂 Ver Registro Detallado de Eventos", expanded=True):
-    if not df_f.empty:
-        df_show = df_f.copy()
-
-        if 'Fecha_DT' in df_show.columns:
-             df_show['Fecha_Txt'] = df_show['Fecha_DT'].dt.strftime('%d-%m-%Y')
-        else:
-             df_show['Fecha_Txt'] = 'N/A'
-
-        columnas_mapeo = {
-            'Fecha_Txt': 'Fecha',              
-            'Máquina': 'Máquina',
-            'Hora Inicio': 'Hora Inicio',
-            'Hora Fin': 'Hora Fin',
-            'Tiempo (Min)': 'Tiempo (min)',
-            'Evento': 'Evento',
-            'Nivel Evento 5': 'Categoría Falla',
-            'Nivel Evento 6': 'Detalle Falla',
-            'Operador': 'Operador'
-        }
-
-        cols_finales = [c for c in columnas_mapeo.keys() if c in df_show.columns]
-        df_final = df_show[cols_finales].rename(columns=columnas_mapeo)
-
-        if 'Máquina' in df_final.columns:
-            sort_cols = ['Máquina']
-            if 'Hora Inicio' in df_final.columns:
-                sort_cols.append('Hora Inicio')
-            
-            df_final = df_final.sort_values(by=sort_cols, ascending=True)
-
-        st.dataframe(
-            df_final, 
-            use_container_width=True, 
-            hide_index=True,
-            column_config={
-                "Tiempo (min)": st.column_config.NumberColumn("Tiempo (min)", format="%.0f min")
-            }
-        )
-    else:
-        st.info("No hay datos para mostrar.")
+                        col_buenas: st.column_config.NumberColumn
