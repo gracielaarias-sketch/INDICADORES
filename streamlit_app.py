@@ -1,14 +1,4 @@
-Aquí tienes el código completo y corregido.
 
-⚠️ IMPORTANTE PARA EVITAR EL ERROR DuplicateElementId: El error que te salió antes ocurre porque copiaste el código nuevo sin borrar el anterior, duplicando los botones y filtros. Para que funcione:
-
-Borra todo el contenido de tu archivo streamlit_app.py.
-
-Pega exclusivamente este bloque de código.
-
-Recuerda poner tu GID en la sección de carga.
-
-Python
 import streamlit as st
 import pandas as pd
 import plotly.express as px
