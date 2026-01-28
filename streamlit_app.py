@@ -1,14 +1,3 @@
-Entendido. Aquí tienes el código completo y reorganizado exactamente como lo pides:
-
-Gráfico OEE Histórico: Se ha movido inmediatamente debajo de los indicadores generales (KPIs) y antes de las pestañas de Estampado/Soldadura.
-
-Tabla Operadores: Se encuentra debajo de la sección de "Baño y Refrigerio".
-
-Resto del reporte: Se incluye todo (Producción, Análisis de Fallas y Tabla Detallada) para que el código sea funcional de principio a fin.
-
-No olvides poner el GID de la pestaña Operarios.
-
-Python
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -49,9 +38,7 @@ def load_data():
         gid_datos = "0"             # Datos crudos de paros
         gid_oee = "1767654796"      # Datos de OEE
         gid_prod = "315437448"      # PRODUCCION
-        
-        # 👇👇👇 PEGA AQUÍ EL GID DE LA PESTAÑA OPERARIOS 👇👇👇
-        gid_operarios = "TU_GID_AQUI" 
+        gid_operarios = "354131379" 
         # ---------------------------------------------------------
 
         base_export = url_base.split("/edit")[0] + "/export?format=csv&gid="
