@@ -1,4 +1,12 @@
+Entendido. He realizado dos ajustes importantes para cumplir con tu requerimiento:
 
+En la carga de datos (load_data): Agregué 'Nivel Evento 4' a la lista de columnas de texto para asegurar que se lea correctamente y se limpien los valores vacíos.
+
+En la sección de Baño y Refrigerio: Modifiqué la lógica para que busque las palabras clave ("Baño" o "Refrigerio") exclusivamente en la columna Nivel Evento 4.
+
+Aquí tienes el código completo corregido y listo para usar:
+
+Python
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -67,8 +75,12 @@ def load_data():
                 df['Fecha_Filtro'] = df['Fecha_DT'].dt.normalize()
                 df = df.dropna(subset=['Fecha_Filtro'])
             
-            # Rellenar Textos
-            cols_texto = ['Fábrica', 'Máquina', 'Evento', 'Código', 'Producto', 'Referencia', 'Nivel Evento 3', 'Nivel Evento 5', 'Nivel Evento 6', 'Operador', 'Hora Inicio', 'Hora Fin']
+            # Rellenar Textos (SE AGREGA NIVEL EVENTO 4 AQUÍ)
+            cols_texto = [
+                'Fábrica', 'Máquina', 'Evento', 'Código', 'Producto', 'Referencia', 
+                'Nivel Evento 3', 'Nivel Evento 4', 'Nivel Evento 5', 'Nivel Evento 6', 
+                'Operador', 'Hora Inicio', 'Hora Fin'
+            ]
             for c_txt in cols_texto:
                 matches = [col for col in df.columns if c_txt.lower() in col.lower()]
                 for match in matches:
@@ -263,7 +275,7 @@ with st.expander("⏱️ Detalle de Horarios y Tiempos (Calculado desde DATOS)",
         st.info("No hay datos cargados en la pestaña principal.")
 
 # ==========================================
-# 🛑 FUNCIONALIDAD 2: BAÑO Y REFRIGERIO
+# 🛑 FUNCIONALIDAD 2: BAÑO Y REFRIGERIO (NUEVO)
 # ==========================================
 st.markdown("---")
 with st.expander("☕ Tiempos de Descanso por Operador (Baño y Refrigerio)"):
@@ -272,17 +284,18 @@ with st.expander("☕ Tiempos de Descanso por Operador (Baño y Refrigerio)"):
         tab_bano, tab_refri = st.tabs(["🚽 Baño", "🥪 Refrigerio"])
 
         def crear_tabla_descanso(keyword, tab_destino):
-            # Buscar la palabra clave en varias columnas de eventos
-            cols_check = [c for c in df_f.columns if 'Evento' in c]
-            if not cols_check:
-                with tab_destino: st.warning("No se encontraron columnas de 'Evento'.")
+            # 🟢 CAMBIO: Buscar SOLO en la columna 'Nivel Evento 4'
+            col_target = 'Nivel Evento 4'
+            
+            # Verificar si existe la columna (insensible a mayúsculas/minúsculas)
+            col_match = next((c for c in df_f.columns if col_target.lower() in c.lower()), None)
+            
+            if not col_match:
+                with tab_destino: st.warning(f"No se encontró la columna '{col_target}' en los datos.")
                 return
 
-            # Crear mascara
-            mask = pd.Series([False] * len(df_f))
-            for col in cols_check:
-                mask = mask | df_f[col].astype(str).str.contains(keyword, case=False)
-            
+            # Filtrar donde la columna 'Nivel Evento 4' contenga la palabra clave
+            mask = df_f[col_match].astype(str).str.contains(keyword, case=False)
             df_sub = df_f[mask]
 
             if not df_sub.empty:
@@ -292,7 +305,7 @@ with st.expander("☕ Tiempos de Descanso por Operador (Baño y Refrigerio)"):
                 
                 resumen = resumen.sort_values('Tiempo Total (Min)', ascending=False)
                 
-                # Calcular metricas antes para evitar errores de sintaxis en el metric call
+                # Calcular metricas antes para evitar errores de sintaxis
                 val_total = resumen['Tiempo Total (Min)'].sum()
                 val_promedio = resumen['Tiempo Total (Min)'].mean()
 
@@ -312,7 +325,7 @@ with st.expander("☕ Tiempos de Descanso por Operador (Baño y Refrigerio)"):
                     )
             else:
                 with tab_destino:
-                    st.info(f"No se encontraron registros que contengan '{keyword}' en este periodo.")
+                    st.info(f"No se encontraron registros que contengan '{keyword}' en la columna '{col_target}'.")
 
         # Generar las tablas
         crear_tabla_descanso("Baño", tab_bano)
@@ -547,6 +560,7 @@ with st.expander("📂 Ver Registro Detallado de Eventos", expanded=True):
             'Hora Fin': 'Hora Fin',
             'Tiempo (Min)': 'Tiempo (min)',
             'Evento': 'Evento',
+            'Nivel Evento 4': 'Subcategoría', # Se agregó para visibilidad si se desea
             'Nivel Evento 5': 'Categoría Falla',
             'Nivel Evento 6': 'Detalle Falla',
             'Operador': 'Operador'
