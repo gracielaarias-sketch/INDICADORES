@@ -39,9 +39,7 @@ def load_data():
         gid_datos = "0"             # Datos crudos de paros (PESTAÑA DATOS)
         gid_oee = "1767654796"      # Datos de OEE
         gid_prod = "315437448"      # PRODUCCION
-        
-        # 👇👇👇 PEGA AQUÍ EL GID DE LA PESTAÑA PERFORMANCE 👇👇👇
-        gid_perf = "000000000"      # <--- CAMBIAR POR EL GID REAL DE PERFORMANCE
+        gid_perf = "354131379"      # PERFORMANCE
         # ---------------------------------------------------------
 
         base_export = url_base.split("/edit")[0] + "/export?format=csv&gid="
