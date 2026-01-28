@@ -69,7 +69,7 @@ def load_data():
                 df['Fecha_Filtro'] = df['Fecha_DT'].dt.normalize()
                 df = df.dropna(subset=['Fecha_Filtro'])
             
-            # Rellenar Textos (SE AGREGÓ 'Usuario 1' AQUÍ)
+            # Rellenar Textos
             cols_texto = [
                 'Fábrica', 'Máquina', 'Evento', 'Código', 'Producto', 'Referencia', 
                 'Nivel Evento 3', 'Nivel Evento 4', 'Nivel Evento 5', 'Nivel Evento 6', 
@@ -409,36 +409,42 @@ with st.expander("📊 Perfo Promedio por Operador", expanded=True):
 # --- 5.4 NUEVO: MAQUINAS POR USUARIO 1 POR FECHA (DESDE PRODUCCIÓN) ---
 with st.expander("🏗️ Máquinas por Operador (Detalle Diario - Producción)", expanded=False):
     if not df_prod_f.empty:
-        # 1. Buscar explícitamente la columna 'Usuario 1'
+        # Detectar columnas
         c_op_prod = next((c for c in df_prod_f.columns if 'usuario 1' in c.lower()), None)
-        
-        # 2. Buscar columna de Máquina
         c_maq_prod = next((c for c in df_prod_f.columns if 'maquina' in c.lower() or 'máquina' in c.lower()), None)
-        
-        # 3. Buscar columna de Piezas (Buenas)
         c_piezas = next((c for c in df_prod_f.columns if 'buenas' in c.lower()), None)
         
         if c_op_prod and c_maq_prod:
-            cols_to_use = [c_op_prod, c_maq_prod, 'Fecha_Filtro']
-            if c_piezas: cols_to_use.append(c_piezas)
+            # 🟢 1. SELECTOR DE USUARIO
+            unique_users = sorted(df_prod_f[c_op_prod].astype(str).unique())
+            sel_users = st.multiselect("🔍 Filtrar por Usuario 1:", unique_users, placeholder="Seleccione uno o varios (Deje vacío para ver todos)")
 
-            df_mach_op = df_prod_f[cols_to_use].copy()
+            df_process = df_prod_f.copy()
             
-            # Formatear fecha para visualización
-            if 'Fecha_Filtro' in df_mach_op.columns:
-                df_mach_op['Fecha'] = df_mach_op['Fecha_Filtro'].dt.strftime('%d-%m-%Y')
+            # 🟢 2. FILTRADO
+            if sel_users:
+                df_process = df_process[df_process[c_op_prod].astype(str).isin(sel_users)]
 
-            # Agrupar
+            # 🟢 3. AGRUPACIÓN (INCLUYENDO FECHA FILTRO PARA ORDENAR)
+            group_cols = [c_op_prod, c_maq_prod, 'Fecha_Filtro']
+            
             if c_piezas:
-                grouped = df_mach_op.groupby([c_op_prod, 'Fecha', c_maq_prod])[c_piezas].sum().reset_index()
+                grouped = df_process.groupby(group_cols)[c_piezas].sum().reset_index()
             else:
-                grouped = df_mach_op.groupby([c_op_prod, 'Fecha', c_maq_prod]).size().reset_index(name='Registros')
+                grouped = df_process.groupby(group_cols).size().reset_index(name='Registros')
             
-            # Ordenar por Operador y Fecha
-            grouped = grouped.sort_values(by=[c_op_prod, 'Fecha'], ascending=[True, False])
+            # 🟢 4. ORDENAR POR FECHA (DESCENDENTE) Y LUEGO USUARIO
+            grouped = grouped.sort_values(by=['Fecha_Filtro', c_op_prod], ascending=[False, True])
+            
+            # 🟢 5. FORMATO DE FECHA VISUAL
+            grouped['Fecha'] = grouped['Fecha_Filtro'].dt.strftime('%d-%m-%Y')
+            
+            # Columnas a mostrar
+            final_cols = ['Fecha', c_op_prod, c_maq_prod]
+            if c_piezas: final_cols.append(c_piezas)
             
             st.dataframe(
-                grouped,
+                grouped[final_cols],
                 use_container_width=True,
                 hide_index=True,
                 column_config={
