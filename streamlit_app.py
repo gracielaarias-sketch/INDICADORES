@@ -1,12 +1,4 @@
-El error SyntaxError: '(' was never closed suele ocurrir cuando falta un paréntesis de cierre en la línea anterior a donde marca el error (line 398).
 
-Esto puede haber ocurrido en las líneas de c1.metric o c2.metric dentro de la nueva función de "Baño y Refrigerio", debido a la complejidad de las f-strings.
-
-He corregido el código simplificando esas líneas (calculando las variables fuera de la función st.metric para evitar errores de sintaxis) y verificado el cierre de todos los paréntesis en las secciones nuevas.
-
-Copia y pega este código completo:
-
-Python
 import streamlit as st
 import pandas as pd
 import plotly.express as px
