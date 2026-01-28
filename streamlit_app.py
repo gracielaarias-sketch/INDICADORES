@@ -1,8 +1,4 @@
-Tienes toda la razón. En Python, no se puede escribir una sentencia compuesta (como with) en la misma línea que un else. Ese fue un error de "compactación" del código.
 
-Aquí tienes el código corregido y validado, con las indentaciones arregladas para evitar ese error de sintaxis.
-
-Python
 import streamlit as st
 import pandas as pd
 import plotly.express as px
