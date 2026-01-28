@@ -39,7 +39,7 @@ def load_data():
         gid_datos = "0"             # Datos crudos de paros
         gid_oee = "1767654796"      # Datos de OEE
         gid_prod = "315437448"      # PRODUCCION
-        gid_operarios = "354131379" # PERFO OPERARIOS
+        gid_operarios = "354131379" # PERFO OPERARIOS (Asegúrate que este GID es correcto)
         # ---------------------------------------------------------
 
         base_export = url_base.split("/edit")[0] + "/export?format=csv&gid="
@@ -239,7 +239,7 @@ with t2:
         show_metric_row(get_metrics('PRP'))
 
 # ==========================================
-# 5. BLOQUE DE OPERADORES (3 EXPANDERS SIN SEPARACIÓN INTERMEDIA)
+# 5. BLOQUE DE OPERADORES
 # ==========================================
 st.markdown("---") # Separador superior del bloque
 
@@ -302,7 +302,7 @@ with st.expander("⏱️ Detalle de Horarios y Tiempos", expanded=False):
     else:
         st.info("No hay datos cargados.")
 
-# --- 5.2 BAÑO Y REFRIGERIO (SIN SEPARADOR) ---
+# --- 5.2 BAÑO Y REFRIGERIO ---
 with st.expander("☕ Tiempos de Baño y Refrigerio"):
     if not df_f.empty and 'Operador' in df_f.columns:
         
@@ -350,12 +350,11 @@ with st.expander("☕ Tiempos de Baño y Refrigerio"):
     else:
         st.warning("No se encontró la columna 'Operador'.")
 
-# --- 5.3 PERFORMANCE DE OPERADORES (SIN SEPARADOR) ---
+# --- 5.3 PERFORMANCE DE OPERADORES ---
 with st.expander("📊 Perfo Promedio por Operador", expanded=True):
     if not df_op_f.empty:
         col_op = next((c for c in df_op_f.columns if any(x in c.lower() for x in ['operador', 'nombre', 'empleado'])), None)
         
-        # Filtro de exclusión de columnas no deseadas
         exclude_terms = ['parada', 'ciclo', 'buenas', 'retrabajo', 'observad', 'cantidad', 'produccion']
         
         cols_metrics = [c for c in df_op_f.select_dtypes(include=['number']).columns 
@@ -406,6 +405,46 @@ with st.expander("📊 Perfo Promedio por Operador", expanded=True):
             st.warning("No se detectaron columnas de Operador o métricas válidas.")
     else:
         st.info("No hay datos de operarios disponibles.")
+
+# --- 5.4 NUEVO: MAQUINAS POR OPERADOR POR FECHA (DESDE PRODUCCIÓN) ---
+with st.expander("🏗️ Máquinas por Operador (Detalle Diario - Producción)", expanded=False):
+    if not df_prod_f.empty:
+        # Detectar columnas dinámicamente en producción
+        c_op = next((c for c in df_prod_f.columns if 'operador' in c.lower()), None)
+        c_maq = next((c for c in df_prod_f.columns if 'maquina' in c.lower() or 'máquina' in c.lower()), None)
+        c_piezas = next((c for c in df_prod_f.columns if 'buenas' in c.lower()), None)
+        
+        if c_op and c_maq:
+            cols_to_use = [c_op, c_maq, 'Fecha_Filtro']
+            if c_piezas: cols_to_use.append(c_piezas)
+
+            df_mach_op = df_prod_f[cols_to_use].copy()
+            
+            # Formatear fecha para visualización
+            if 'Fecha_Filtro' in df_mach_op.columns:
+                df_mach_op['Fecha'] = df_mach_op['Fecha_Filtro'].dt.strftime('%d-%m-%Y')
+
+            # Agrupar
+            if c_piezas:
+                grouped = df_mach_op.groupby([c_op, 'Fecha', c_maq])[c_piezas].sum().reset_index()
+            else:
+                grouped = df_mach_op.groupby([c_op, 'Fecha', c_maq]).size().reset_index(name='Registros')
+            
+            # Ordenar por Operador y Fecha
+            grouped = grouped.sort_values(by=[c_op, 'Fecha'], ascending=[True, False])
+            
+            st.dataframe(
+                grouped,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    c_piezas: st.column_config.NumberColumn("Piezas Buenas", format="%d") if c_piezas else None
+                }
+            )
+        else:
+            st.warning("No se encontraron las columnas 'Operador' o 'Máquina' en la pestaña Producción.")
+    else:
+        st.info("No hay datos de producción disponibles para este periodo.")
 
 # ==========================================
 # 6. SECCIÓN PRODUCCIÓN
