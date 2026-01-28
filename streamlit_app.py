@@ -495,18 +495,27 @@ with st.expander("📂 Ver Registro Detallado de Eventos", expanded=True):
         if 'Fecha_DT' in df_show.columns: df_show['Fecha_Txt'] = df_show['Fecha_DT'].dt.strftime('%d-%m-%Y')
         else: df_show['Fecha_Txt'] = 'N/A'
         
-        cols_map = {'Fecha_Txt': 'Fecha', 'Máquina': 'Máquina', 'Hora Inicio': 'Hora Inicio', 'Hora Fin': 'Hora Fin', 'Tiempo (Min)': 'Tiempo (min)', 'Evento': 'Evento', 'Nivel Evento 4': 'Subcategoría', 'Nivel Evento 5': 'Categoría Falla', 'Nivel Evento 6': 'Detalle Falla', 'Operador': 'Operador'}
+        cols_map = {
+            'Fecha_Txt': 'Fecha', 
+            'Máquina': 'Máquina', 
+            'Hora Inicio': 'Hora Inicio', 
+            'Hora Fin': 'Hora Fin', 
+            'Tiempo (Min)': 'Tiempo (min)', 
+            'Evento': 'Evento', 
+            'Nivel Evento 4': 'Subcategoría', 
+            'Nivel Evento 5': 'Categoría Falla', 
+            'Nivel Evento 6': 'Detalle Falla', 
+            'Operador': 'Operador'
+        }
         c_final = [c for c in cols_map.keys() if c in df_show.columns]
         df_final = df_show[c_final].rename(columns=cols_map)
         
         if 'Máquina' in df_final.columns:
-            sort_c = ['Máquina']
-            if 'Hora Inicio' in df_final.columns: sort_c.append('Hora Inicio')
-            df_final = df_final.sort_values(by=sort_c)
+            sort_cols = ['Máquina']
+            if 'Hora Inicio' in df_final.columns:
+                sort_cols.append('Hora Inicio')
+            df_final = df_final.sort_values(by=sort_cols)
             
         st.dataframe(df_final, use_container_width=True, hide_index=True, column_config={"Tiempo (min)": st.column_config.NumberColumn(format="%.0f min")})
-    else: st.info("No hay datos.")s: sort_c.append('Hora Inicio')
-            df_final = df_final.sort_values(by=sort_c)
-            
-        st.dataframe(df_final, use_container_width=True, hide_index=True, column_config={"Tiempo (min)": st.column_config.NumberColumn(format="%.0f min")})
-    else: st.info("No hay datos.")
+    else:
+        st.info("No hay datos para mostrar.")
