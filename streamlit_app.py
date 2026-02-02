@@ -159,7 +159,7 @@ with t2:
 # 6. MÓDULO INDICADORES DIARIOS (CON TABLA DE DÍAS)
 # ==========================================
 st.markdown("---")
-st.header("📈 INDICADORES DIARIOS POR OPERADOR")
+st.header("📈 INDICADORES POR OPERADOR")
 with st.expander("👉 Ver Resumen y Evolución de Operarios", expanded=False):
     if not df_op_f.empty:
         col_op = next((c for c in df_op_f.columns if any(x in c.lower() for x in ['operador', 'nombre'])), 'Operador')
@@ -179,7 +179,6 @@ with st.expander("👉 Ver Resumen y Evolución de Operarios", expanded=False):
 # ==========================================
 # 7. MÓDULO BAÑO Y REFRIGERIO
 # ==========================================
-st.markdown("---")
 with st.expander("☕ Tiempos de Baño y Refrigerio"):
     tb, tr = st.tabs(["Baño", "Refrigerio"])
     for i, label in enumerate(["Baño", "Refrigerio"]):
