@@ -357,7 +357,7 @@ with st.expander("☕ Tiempos de Baño y Refrigerio"):
 st.markdown("---")
 st.header("📈 INDICADORES DIARIOS")
 
-with st.expander("👉 Desplegar Análisis Diario (Operarios y Máquinas)", expanded=False):
+with st.expander("Desplegar Análisis Diario (Operarios y Máquinas)", expanded=False):
     if not df_op_f.empty:
         # 1. IDENTIFICACIÓN DE COLUMNAS
         col_op_name = next((c for c in df_op_f.columns if any(x in c.lower() for x in ['operador', 'nombre', 'empleado'])), None)
@@ -370,7 +370,7 @@ with st.expander("👉 Desplegar Análisis Diario (Operarios y Máquinas)", expa
         if col_op_name and col_metric_graph:
             
             # --- TABLA DE RESUMEN DE DÍAS (SOLICITADA) ---
-            st.subheader("📋 Resumen de Días Registrados")
+            st.subheader("Resumen de Días Registrados")
             # Agrupar por operario y contar fechas únicas
             df_dias_count = df_op_f.groupby(col_op_name)['Fecha_Filtro'].nunique().reset_index()
             df_dias_count.columns = ['Operador', 'Días con Registro']
