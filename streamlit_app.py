@@ -32,7 +32,7 @@ def load_data():
             st.error("⚠️ No se encontró la configuración de secretos (.streamlit/secrets.toml).")
             return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-        # 🟢 CONFIGURACIÓN DE GIDs
+        # CONFIGURACIÓN DE GIDs
         gid_datos = "0"             # Datos crudos de paros
         gid_oee = "1767654796"      # Datos de OEE
         gid_prod = "315437448"      # PRODUCCION
@@ -115,19 +115,30 @@ máquinas = st.sidebar.multiselect("Máquina", opciones_maquina, default=opcione
 
 if isinstance(rango, (list, tuple)) and len(rango) == 2:
     ini, fin = pd.to_datetime(rango[0]), pd.to_datetime(rango[1])
+    
+    # Filtrado de Paros
     df_f = df_raw[(df_raw['Fecha_Filtro'] >= ini) & (df_raw['Fecha_Filtro'] <= fin)]
     df_f = df_f[df_f['Fábrica'].isin(fábricas) & df_f['Máquina'].isin(máquinas)]
     
+    # Filtrado de OEE
     if not df_oee_raw.empty and 'Fecha_Filtro' in df_oee_raw.columns:
         df_oee_f = df_oee_raw[(df_oee_raw['Fecha_Filtro'] >= ini) & (df_oee_raw['Fecha_Filtro'] <= fin)]
+        col_maq_oee = next((c for c in df_oee_f.columns if 'máquina' in c.lower()), None)
+        if col_maq_oee:
+             df_oee_f = df_oee_f[df_oee_f[col_maq_oee].isin(máquinas)]
     else:
         df_oee_f = df_oee_raw
 
+    # Filtrado de Producción
     if not df_prod_raw.empty and 'Fecha_Filtro' in df_prod_raw.columns:
         df_prod_f = df_prod_raw[(df_prod_raw['Fecha_Filtro'] >= ini) & (df_prod_raw['Fecha_Filtro'] <= fin)]
+        col_maq_prod = next((c for c in df_prod_f.columns if 'máquina' in c.lower() or 'maquina' in c.lower()), None)
+        if col_maq_prod:
+            df_prod_f = df_prod_f[df_prod_f[col_maq_prod].isin(máquinas)]
     else:
         df_prod_f = pd.DataFrame()
 
+    # Performance Operarios
     df_op_f = df_operarios_raw[(df_operarios_raw['Fecha_Filtro'] >= ini) & (df_operarios_raw['Fecha_Filtro'] <= fin)] if not df_operarios_raw.empty else pd.DataFrame()
 else:
     st.info("Seleccione un rango de fechas válido.")
@@ -173,7 +184,7 @@ def show_historical_oee(filter_name, title):
             st.plotly_chart(fig, use_container_width=True)
 
 # ==========================================
-# 5. DASHBOARD PRINCIPAL
+# 5. DASHBOARD PRINCIPAL (OEE)
 # ==========================================
 st.title("🏭 INDICADORES FAMMA")
 st.caption("Promedios del periodo seleccionado")
@@ -227,8 +238,8 @@ with st.expander("⏱️ Detalle de Horarios y Tiempos", expanded=False):
         df_calc['min_fin'] = df_calc['Hora Fin'].apply(time_to_min)
         res_maq = df_calc.groupby(['Fecha_Filtro', 'Máquina']).agg({'min_ini':'min', 'min_fin':'max', 'Tiempo (Min)':'sum'}).reset_index()
         avg_maq = res_maq.groupby('Máquina').mean().reset_index()
-        avg_maq['Inicio'] = avg_maq['min_ini'].apply(lambda x: f"{int(x//60):02d}:{int(x%60):02d}")
-        avg_maq['Fin'] = avg_maq['min_fin'].apply(lambda x: f"{int(x//60):02d}:{int(x%60):02d}")
+        avg_maq['Inicio'] = avg_maq['min_ini'].apply(lambda x: f"{int(x//60):02d}:{int(x%60):02d}" if pd.notnull(x) else "--:--")
+        avg_maq['Fin'] = avg_maq['min_fin'].apply(lambda x: f"{int(x//60):02d}:{int(x%60):02d}" if pd.notnull(x) else "--:--")
         st.dataframe(avg_maq[['Máquina', 'Inicio', 'Fin', 'Tiempo (Min)']], use_container_width=True, hide_index=True)
 
 with st.expander("☕ Tiempos de Baño y Refrigerio"):
@@ -275,11 +286,43 @@ if not df_prod_f.empty:
 # ==========================================
 st.markdown("---")
 st.header("Análisis de Fallas")
+
 if not df_f.empty:
-    df_fallas = df_f[df_f['Nivel Evento 3'].astype(str).str.contains('FALLA', case=False)]
+    # Filtramos solo eventos que contienen la palabra FALLA en el Nivel 3
+    df_fallas = df_f[df_f['Nivel Evento 3'].astype(str).str.contains('FALLA', case=False)].copy()
+    
     if not df_fallas.empty:
-        top_f = df_fallas.groupby('Nivel Evento 6')['Tiempo (Min)'].sum().reset_index().nlargest(15, 'Tiempo (Min)')
-        st.plotly_chart(px.bar(top_f, x='Tiempo (Min)', y='Nivel Evento 6', orientation='h', title="Top 15 Fallas"), use_container_width=True)
+        # Agrupamos por detalle de falla (Nivel 6) y sumamos tiempo
+        # nlargest(15) obtiene el top, y sort_values(ascending=True) asegura que al graficar 
+        # horizontalmente, la barra más larga (la primera del top) quede arriba.
+        top_f = (df_fallas.groupby('Nivel Evento 6')['Tiempo (Min)']
+                 .sum()
+                 .reset_index()
+                 .nlargest(15, 'Tiempo (Min)')
+                 .sort_values('Tiempo (Min)', ascending=True))
+        
+        # Creación del gráfico con gradiente y etiquetas
+        fig_fallas = px.bar(
+            top_f, 
+            x='Tiempo (Min)', 
+            y='Nivel Evento 6', 
+            orientation='h', 
+            title="Top 15 Causas de Paro por Falla (Minutos)",
+            text_auto='.0f',               # Muestra el dato en la barra sin decimales
+            color='Tiempo (Min)',          # Variable para el gradiente
+            color_continuous_scale='Reds', # Escala de colores (tonos rojos)
+            labels={'Tiempo (Min)': 'Minutos Totales', 'Nivel Evento 6': 'Causa de Falla'}
+        )
+        
+        # Mejoras estéticas: quitar barra de escala lateral y forzar orden visual
+        fig_fallas.update_layout(
+            coloraxis_showscale=False,
+            yaxis={'categoryorder':'total ascending'}
+        )
+        
+        st.plotly_chart(fig_fallas, use_container_width=True)
+    else:
+        st.info("No se registraron paros por 'FALLA' en este periodo.")
 
 with st.expander("📂 Ver Registro Detallado de Eventos", expanded=False):
-    st.dataframe(df_f, use_container_width=True)
+    st.dataframe(df_f, use_container_width=True, hide_index=True)
