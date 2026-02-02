@@ -296,4 +296,4 @@ if not df_f.empty:
 st.divider()
 with st.expander("📂 Ver Registro Detallado de Eventos", expanded=True):
     if not df_f.empty:
-        st.dataframe(df_f[['Fecha_Filtro','Máquina','Hora Inicio','Hora Fin','Tiempo (Min)','Evento','Oper
+        st.dataframe(df_f[['Fecha_Filtro','Máquina','Hora Inicio','Hora Fin','Tiempo (Min)','Evento','Operador']], use_container_width=True, hide_index=True)
