@@ -353,133 +353,101 @@ with st.expander("☕ Tiempos de Baño y Refrigerio"):
 
 
 # =========================================================
-# 6. SECCIÓN NUEVA: INDICADORES DIARIOS (OPERARIOS + MÁQUINAS)
+# 6. SECCIÓN: INDICADORES DIARIOS (EN DESPLEGABLE)
 # =========================================================
 st.markdown("---")
 st.header("📈 INDICADORES DIARIOS")
 
-if not df_op_f.empty:
-    
-    # 1. IDENTIFICACIÓN DE COLUMNAS EN DF_OPERARIOS (Para el gráfico)
-    col_op_name = next((c for c in df_op_f.columns if any(x in c.lower() for x in ['operador', 'nombre', 'empleado'])), None)
-    
-    # Buscamos la métrica principal a graficar
-    cols_metrics = [c for c in df_op_f.select_dtypes(include=['number']).columns 
-                    if 'fecha' not in c.lower() and 'gid' not in c.lower()]
-    
-    # Prioridad: OEE -> Eficiencia -> Performance
-    col_metric_graph = next((c for c in cols_metrics if 'oee' in c.lower()), 
-                       next((c for c in cols_metrics if 'efic' in c.lower()), 
-                       next((c for c in cols_metrics if 'perf' in c.lower()), None)))
+with st.expander("👉 Desplegar Análisis Diario (Operarios y Máquinas)", expanded=False):
+    if not df_op_f.empty:
+        # 1. IDENTIFICACIÓN DE COLUMNAS
+        col_op_name = next((c for c in df_op_f.columns if any(x in c.lower() for x in ['operador', 'nombre', 'empleado'])), None)
+        cols_metrics = [c for c in df_op_f.select_dtypes(include=['number']).columns 
+                        if 'fecha' not in c.lower() and 'gid' not in c.lower()]
+        col_metric_graph = next((c for c in cols_metrics if 'oee' in c.lower()), 
+                           next((c for c in cols_metrics if 'efic' in c.lower()), 
+                           next((c for c in cols_metrics if 'perf' in c.lower()), None)))
 
-    if col_op_name and col_metric_graph:
-        
-        # 2. SELECTOR DE OPERARIOS
-        lista_operarios = sorted(df_op_f[col_op_name].astype(str).unique())
-        st.subheader("Selección de Personal")
-        
-        sel_operarios = st.multiselect(
-            "👤 Seleccione Operarios para visualizar evolución:", 
-            lista_operarios,
-            placeholder="Escriba o seleccione nombres..."
-        )
-
-        if sel_operarios:
-            # ---------------------------------------------------------
-            # A. GRÁFICO DE EVOLUCIÓN (PERFORMANCE DIARIA)
-            # ---------------------------------------------------------
-            df_graph = df_op_f[df_op_f[col_op_name].astype(str).isin(sel_operarios)].copy()
-            df_graph = df_graph.sort_values(by='Fecha_Filtro')
-
-            # Escala
-            is_scale_100 = df_graph[col_metric_graph].max() > 1.5
+        if col_op_name and col_metric_graph:
             
-            fig_daily = px.line(
-                df_graph, 
-                x='Fecha_Filtro', 
-                y=col_metric_graph, 
-                color=col_op_name,
-                markers=True,
-                title=f"Evolución Diaria: {col_metric_graph}",
-                labels={'Fecha_Filtro': 'Fecha', col_metric_graph: 'Valor', col_op_name: 'Operario'}
+            # 2. SELECTOR DE OPERARIOS
+            lista_operarios = sorted(df_op_f[col_op_name].astype(str).unique())
+            st.subheader("Selección de Personal")
+            
+            sel_operarios = st.multiselect(
+                "👤 Seleccione Operarios para visualizar evolución:", 
+                lista_operarios,
+                placeholder="Escriba o seleccione nombres..."
             )
-            
-            if not is_scale_100:
-                fig_daily.update_layout(yaxis_tickformat='.0%')
-            
-            st.plotly_chart(fig_daily, use_container_width=True)
 
-            # ---------------------------------------------------------
-            # B. TABLA DE MÁQUINAS (BÚSQUEDA USUARIO 1 A 6)
-            # ---------------------------------------------------------
-            st.markdown("#### 🏗️ Detalle de Actividad en Máquinas")
-            
-            if not df_prod_f.empty:
-                # 1. Detectar columnas de producción
-                c_maq_prod = next((c for c in df_prod_f.columns if 'maquina' in c.lower() or 'máquina' in c.lower()), None)
-                c_piezas = next((c for c in df_prod_f.columns if 'buenas' in c.lower()), None)
+            if sel_operarios:
+                # A. GRÁFICO
+                df_graph = df_op_f[df_op_f[col_op_name].astype(str).isin(sel_operarios)].copy()
+                df_graph = df_graph.sort_values(by='Fecha_Filtro')
+                is_scale_100 = df_graph[col_metric_graph].max() > 1.5
                 
-                # 2. Detectar columnas de Usuario 1 a 6 dinámicamente
-                cols_usuarios = []
-                for i in range(1, 7): # Busca del 1 al 6
-                    col = next((c for c in df_prod_f.columns if 'usuario' in c.lower() and str(i) in c), None)
-                    if col:
-                        cols_usuarios.append(col)
+                fig_daily = px.line(
+                    df_graph, 
+                    x='Fecha_Filtro', 
+                    y=col_metric_graph, 
+                    color=col_op_name,
+                    markers=True,
+                    title=f"Evolución Diaria: {col_metric_graph}",
+                    labels={'Fecha_Filtro': 'Fecha', col_metric_graph: 'Valor', col_op_name: 'Operario'}
+                )
+                if not is_scale_100: fig_daily.update_layout(yaxis_tickformat='.0%')
+                st.plotly_chart(fig_daily, use_container_width=True)
 
-                if cols_usuarios and c_maq_prod:
-                    # 3. Transformación (Melt) para buscar en todas las columnas de usuario a la vez
-                    id_vars = ['Fecha_Filtro', c_maq_prod]
-                    if c_piezas: id_vars.append(c_piezas)
-                    
-                    # Convertimos tabla ancha a larga
-                    df_melted = df_prod_f.melt(
-                        id_vars=id_vars, 
-                        value_vars=cols_usuarios, 
-                        value_name='Operador_Encontrado'
-                    ).dropna(subset=['Operador_Encontrado'])
-                    
-                    # 4. Filtramos donde el 'Operador_Encontrado' esté en nuestra selección
-                    df_maq_op = df_melted[df_melted['Operador_Encontrado'].astype(str).isin(sel_operarios)].copy()
-                    
-                    if not df_maq_op.empty:
-                        # Agrupamos por Fecha, Operario (Encontrado) y Máquina
-                        cols_group = ['Fecha_Filtro', 'Operador_Encontrado', c_maq_prod]
+                # B. TABLA DE MÁQUINAS (BÚSQUEDA 1-6)
+                st.markdown("#### 🏗️ Detalle de Actividad en Máquinas")
+                if not df_prod_f.empty:
+                    c_maq_prod = next((c for c in df_prod_f.columns if 'maquina' in c.lower() or 'máquina' in c.lower()), None)
+                    c_piezas = next((c for c in df_prod_f.columns if 'buenas' in c.lower()), None)
+                    cols_usuarios = []
+                    for i in range(1, 7):
+                        col = next((c for c in df_prod_f.columns if 'usuario' in c.lower() and str(i) in c), None)
+                        if col: cols_usuarios.append(col)
+
+                    if cols_usuarios and c_maq_prod:
+                        id_vars = ['Fecha_Filtro', c_maq_prod]
+                        if c_piezas: id_vars.append(c_piezas)
                         
-                        if c_piezas:
-                            df_table_maq = df_maq_op.groupby(cols_group)[c_piezas].sum().reset_index()
+                        df_melted = df_prod_f.melt(id_vars=id_vars, value_vars=cols_usuarios, value_name='Operador_Encontrado').dropna(subset=['Operador_Encontrado'])
+                        df_maq_op = df_melted[df_melted['Operador_Encontrado'].astype(str).isin(sel_operarios)].copy()
+                        
+                        if not df_maq_op.empty:
+                            cols_group = ['Fecha_Filtro', 'Operador_Encontrado', c_maq_prod]
+                            if c_piezas:
+                                df_table_maq = df_maq_op.groupby(cols_group)[c_piezas].sum().reset_index()
+                            else:
+                                df_table_maq = df_maq_op.groupby(cols_group).size().reset_index(name='Registros')
+                            
+                            df_table_maq = df_table_maq.sort_values(by=['Fecha_Filtro', 'Operador_Encontrado'], ascending=[False, True])
+                            df_table_maq['Fecha'] = df_table_maq['Fecha_Filtro'].dt.strftime('%d-%m-%Y')
+                            
+                            cols_finales_t = ['Fecha', 'Operador_Encontrado', c_maq_prod]
+                            if c_piezas: cols_finales_t.append(c_piezas)
+                            
+                            st.dataframe(
+                                df_table_maq[cols_finales_t],
+                                use_container_width=True, hide_index=True,
+                                column_config={
+                                    c_piezas: st.column_config.NumberColumn("Piezas Buenas", format="%d") if c_piezas else None,
+                                    c_maq_prod: "Máquina", 'Operador_Encontrado': "Operario"
+                                }
+                            )
                         else:
-                            df_table_maq = df_maq_op.groupby(cols_group).size().reset_index(name='Registros')
-                        
-                        # Formato y Orden
-                        df_table_maq = df_table_maq.sort_values(by=['Fecha_Filtro', 'Operador_Encontrado'], ascending=[False, True])
-                        df_table_maq['Fecha'] = df_table_maq['Fecha_Filtro'].dt.strftime('%d-%m-%Y')
-                        
-                        cols_finales_t = ['Fecha', 'Operador_Encontrado', c_maq_prod]
-                        if c_piezas: cols_finales_t.append(c_piezas)
-                        
-                        st.dataframe(
-                            df_table_maq[cols_finales_t],
-                            use_container_width=True,
-                            hide_index=True,
-                            column_config={
-                                c_piezas: st.column_config.NumberColumn("Piezas Buenas", format="%d") if c_piezas else None,
-                                c_maq_prod: "Máquina",
-                                'Operador_Encontrado': "Operario"
-                            }
-                        )
+                            st.warning(f"Los operarios seleccionados no aparecen como Usuario (1-6) en Producción.")
                     else:
-                        st.warning(f"Los operarios seleccionados no aparecen como Usuario (1-6) en Producción para este periodo.")
+                        st.warning("Faltan columnas de Usuario o Máquina en Producción.")
                 else:
-                    st.warning("No se encontraron las columnas 'Usuario 1...6' o 'Máquina' en la base de Producción.")
+                    st.info("No hay datos de producción.")
             else:
-                st.info("No hay datos de producción cargados para cruzar información.")
-                
+                st.info("👆 Seleccione operarios para ver datos.")
         else:
-            st.info("👆 Seleccione al menos un operario para ver sus gráficas y tablas.")
+            st.warning("No se detectaron columnas de métricas u operarios.")
     else:
-        st.warning("No se detectaron columnas de métricas (OEE/Performance) o Nombres en la data de operarios.")
-else:
-    st.info("No hay datos de 'Performance Operarios' disponibles para este rango de fechas.")
+        st.info("No hay datos de Performance de Operarios.")
 
 # ==========================================
 # 7. SECCIÓN PRODUCCIÓN GENERAL
@@ -519,19 +487,25 @@ if not df_prod_f.empty:
                     )
                     st.plotly_chart(fig_prod, use_container_width=True)
 
-            with st.expander("📋 Ver Tabla Detallada por Código"):
+            # TABLA DESPLEGABLE SOLICITADA: PRODUCCIÓN POR MÁQUINA Y CÓDIGO
+            with st.expander("📋 Detalle de Producción por Máquina y Código", expanded=False):
                 cols_finales = [col_maq, col_cod]
                 if col_buenas: cols_finales.append(col_buenas)
                 if col_retrabajo: cols_finales.append(col_retrabajo)
                 if col_observadas: cols_finales.append(col_observadas)
                 if col_ciclo: cols_finales.append(col_ciclo)
                 
+                # Ordenamos por Máquina y luego por Cantidad de Buenas (desc)
+                df_grouped_sorted = df_grouped.sort_values(by=[col_maq, col_buenas] if col_buenas else [col_maq], ascending=[True, False])
+
                 st.dataframe(
-                    df_grouped[cols_finales],
+                    df_grouped_sorted[cols_finales],
                     use_container_width=True, hide_index=True,
                     column_config={
                         col_ciclo: st.column_config.NumberColumn("Ciclo (s)", format="%.1f s"),
                         col_buenas: st.column_config.NumberColumn("Buenas", format="%d"),
+                        col_maq: "Máquina",
+                        col_cod: "Código de Producto"
                     }
                 )
     else:
