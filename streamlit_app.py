@@ -369,9 +369,26 @@ with st.expander("👉 Desplegar Análisis Diario (Operarios y Máquinas)", expa
 
         if col_op_name and col_metric_graph:
             
+            # --- TABLA DE RESUMEN DE DÍAS (SOLICITADA) ---
+            st.subheader("📋 Resumen de Días Registrados")
+            # Agrupar por operario y contar fechas únicas
+            df_dias_count = df_op_f.groupby(col_op_name)['Fecha_Filtro'].nunique().reset_index()
+            df_dias_count.columns = ['Operador', 'Días con Registro']
+            df_dias_count = df_dias_count.sort_values(by='Días con Registro', ascending=False)
+            
+            st.dataframe(
+                df_dias_count,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Días con Registro": st.column_config.NumberColumn(format="%d días")
+                }
+            )
+            st.divider()
+
             # 2. SELECTOR DE OPERARIOS
             lista_operarios = sorted(df_op_f[col_op_name].astype(str).unique())
-            st.subheader("Selección de Personal")
+            st.subheader("Selección de Personal para Gráficos")
             
             sel_operarios = st.multiselect(
                 "👤 Seleccione Operarios para visualizar evolución:", 
@@ -555,7 +572,7 @@ if not df_prod_f.empty:
                         row_total[col_observadas] = sum_obs
                     if col_ciclo: 
                         cols_finales_total.append(col_ciclo)
-                        row_total[col_ciclo] = 0 # O promedio, pero 0 para total es visualmente más limpio
+                        row_total[col_ciclo] = 0 
 
                     # Concatenar la fila de total al final
                     df_total_row = pd.DataFrame([row_total])
