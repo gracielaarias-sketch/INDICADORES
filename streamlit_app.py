@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -492,7 +491,7 @@ if not df_prod_f.empty:
                     st.plotly_chart(fig_prod, use_container_width=True)
 
             # ----------------------------------------------------
-            # TABLA 1: PRODUCCIÓN DETALLADA POR FECHA (Mantiene la "anterior")
+            # TABLA 1: PRODUCCIÓN DETALLADA POR FECHA
             # ----------------------------------------------------
             with st.expander("📅 Producción Detallada por Fecha", expanded=False):
                 # Agrupamos también por Fecha
@@ -518,29 +517,63 @@ if not df_prod_f.empty:
                 )
 
             # ----------------------------------------------------
-            # TABLA 2: SUMA TOTAL POR MÁQUINA Y PRODUCTO (Nueva tabla agregada)
+            # TABLA 2: SUMA TOTAL POR MÁQUINA Y PRODUCTO (CON SELECTOR Y TOTAL)
             # ----------------------------------------------------
             with st.expander("∑ Resumen Acumulado por Máquina y Producto", expanded=False):
-                # Usamos el df_grouped_total que ya calculamos arriba (Sin fecha)
-                cols_finales_total = [col_maq, col_cod]
-                if col_buenas: cols_finales_total.append(col_buenas)
-                if col_retrabajo: cols_finales_total.append(col_retrabajo)
-                if col_observadas: cols_finales_total.append(col_observadas)
-                if col_ciclo: cols_finales_total.append(col_ciclo)
                 
-                # Ordenamos por Máquina y cantidad de piezas
-                df_grouped_total_sorted = df_grouped_total.sort_values(by=[col_maq, col_buenas] if col_buenas else [col_maq], ascending=[True, False])
+                # 1. Selector de Máquinas
+                maquinas_disponibles = sorted(df_grouped_total[col_maq].astype(str).unique())
+                sel_maq_acum = st.multiselect("🔍 Filtrar Máquinas (Dejar vacío para ver todas):", maquinas_disponibles)
+                
+                # 2. Filtrado
+                df_acum_show = df_grouped_total.copy()
+                if sel_maq_acum:
+                    df_acum_show = df_acum_show[df_acum_show[col_maq].astype(str).isin(sel_maq_acum)]
 
-                st.dataframe(
-                    df_grouped_total_sorted[cols_finales_total],
-                    use_container_width=True, hide_index=True,
-                    column_config={
-                        col_ciclo: st.column_config.NumberColumn("Ciclo Prom (s)", format="%.1f s"),
-                        col_buenas: st.column_config.NumberColumn("Total Buenas", format="%d"),
-                        col_maq: "Máquina",
-                        col_cod: "Código de Producto"
-                    }
-                )
+                # 3. Ordenamiento
+                df_acum_show = df_acum_show.sort_values(by=[col_maq, col_buenas] if col_buenas else [col_maq], ascending=[True, False])
+
+                # 4. Cálculo y Agregado de Fila TOTAL
+                if not df_acum_show.empty:
+                    cols_finales_total = [col_maq, col_cod]
+                    
+                    # Totales
+                    sum_buenas = df_acum_show[col_buenas].sum() if col_buenas else 0
+                    sum_retrabajo = df_acum_show[col_retrabajo].sum() if col_retrabajo else 0
+                    sum_obs = df_acum_show[col_observadas].sum() if col_observadas else 0
+                    
+                    # Crear fila Total
+                    row_total = {col_maq: 'TOTAL', col_cod: ''}
+                    if col_buenas: 
+                        cols_finales_total.append(col_buenas)
+                        row_total[col_buenas] = sum_buenas
+                    if col_retrabajo: 
+                        cols_finales_total.append(col_retrabajo)
+                        row_total[col_retrabajo] = sum_retrabajo
+                    if col_observadas: 
+                        cols_finales_total.append(col_observadas)
+                        row_total[col_observadas] = sum_obs
+                    if col_ciclo: 
+                        cols_finales_total.append(col_ciclo)
+                        row_total[col_ciclo] = 0 # O promedio, pero 0 para total es visualmente más limpio
+
+                    # Concatenar la fila de total al final
+                    df_total_row = pd.DataFrame([row_total])
+                    df_acum_show = pd.concat([df_acum_show, df_total_row], ignore_index=True)
+
+                    st.dataframe(
+                        df_acum_show[cols_finales_total],
+                        use_container_width=True, hide_index=True,
+                        column_config={
+                            col_ciclo: st.column_config.NumberColumn("Ciclo Prom (s)", format="%.1f s"),
+                            col_buenas: st.column_config.NumberColumn("Total Buenas", format="%d"),
+                            col_maq: "Máquina",
+                            col_cod: "Código de Producto"
+                        }
+                    )
+                else:
+                    st.info("No hay datos para las máquinas seleccionadas.")
+
     else:
         st.warning("Faltan columnas clave en Producción.")
 else:
