@@ -87,7 +87,7 @@ def load_data():
 df_raw, df_oee_raw, df_prod_raw, df_operarios_raw = load_data()
 
 # ==========================================
-# 3. FILTROS
+# 3. FILTROS LATERALES (GLOBALES)
 # ==========================================
 if df_raw.empty:
     st.warning("No hay datos cargados.")
@@ -99,22 +99,21 @@ max_d = df_raw['Fecha_Filtro'].max().date()
 rango = st.sidebar.date_input("Periodo", [min_d, max_d], min_value=min_d, max_value=max_d, key="main_date_filter_unique")
 
 st.sidebar.divider()
-st.sidebar.header("⚙️ Filtros")
+st.sidebar.header("⚙️ Filtros Globales")
 
 opciones_fabrica = sorted(df_raw['Fábrica'].unique())
 fábricas = st.sidebar.multiselect("Fábrica", opciones_fabrica, default=opciones_fabrica)
 
 df_temp = df_raw[df_raw['Fábrica'].isin(fábricas)]
 opciones_maquina = sorted(df_temp['Máquina'].unique())
-máquinas = st.sidebar.multiselect("Máquina", opciones_maquina, default=opciones_maquina)
+máquinas_globales = st.sidebar.multiselect("Máquina", opciones_maquina, default=opciones_maquina)
 
 if isinstance(rango, (list, tuple)) and len(rango) == 2:
     ini, fin = pd.to_datetime(rango[0]), pd.to_datetime(rango[1])
     df_f = df_raw[(df_raw['Fecha_Filtro'] >= ini) & (df_raw['Fecha_Filtro'] <= fin)]
-    df_f = df_f[df_f['Fábrica'].isin(fábricas) & df_f['Máquina'].isin(máquinas)]
+    df_f = df_f[df_f['Fábrica'].isin(fábricas) & df_f['Máquina'].isin(máquinas_globales)]
     df_oee_f = df_oee_raw[(df_oee_raw['Fecha_Filtro'] >= ini) & (df_oee_raw['Fecha_Filtro'] <= fin)] if not df_oee_raw.empty else pd.DataFrame()
     df_prod_f = df_prod_raw[(df_prod_raw['Fecha_Filtro'] >= ini) & (df_prod_raw['Fecha_Filtro'] <= fin)] if not df_prod_raw.empty else pd.DataFrame()
-    df_op_f = df_operarios_raw[(df_operarios_raw['Fecha_Filtro'] >= ini) & (df_operarios_raw['Fecha_Filtro'] <= fin)] if not df_operarios_raw.empty else pd.DataFrame()
 else:
     st.stop()
 
@@ -145,7 +144,7 @@ def show_metric_row(m):
 
 def show_historical_oee(filter_name, title):
     if not df_oee_f.empty:
-        mask = df_oee_f.apply(lambda row: row.astype(str).str.upper().str.contains(filter_name.upper()).any(), axis=1)
+        mask = df_oee_f.apply(lambda row: row.astype(str).str.upper().str.contains(name_filter.upper()).any(), axis=1)
         df_proc = df_oee_f[mask].copy()
         col_oee = next((c for c in df_proc.columns if 'OEE' in c.upper()), None)
         if col_oee and not df_proc.empty:
@@ -174,59 +173,72 @@ with t2:
     with st.expander("📉 Histórico Soldadura"): show_historical_oee('SOLDADURA', 'Soldadura')
 
 # ==========================================
-# 9. ANÁLISIS DE FALLAS (CON CAMBIOS SOLICITADOS)
+# 9. ANÁLISIS DE FALLAS (CON FILTRO POR MÁQUINA)
 # ==========================================
 st.markdown("---")
 st.header("Análisis de Fallas")
 
 if not df_f.empty:
-    # Detectamos columnas
     col_cat = next((c for c in df_f.columns if 'nivel evento 3' in c.lower()), None)
     col_det = next((c for c in df_f.columns if 'nivel evento 6' in c.lower()), None)
 
     if col_cat and col_det:
-        # Filtrar solo FALLAS (Case insensitive)
-        df_fallas = df_f[df_f[col_cat].astype(str).str.contains('FALLA', case=False)].copy()
+        # Filtrar solo FALLAS primero
+        df_fallas_base = df_f[df_f[col_cat].astype(str).str.contains('FALLA', case=False)].copy()
         
-        if not df_fallas.empty:
-            # Agrupar, ordenar de mayor a menor y tomar el Top 15
-            top_f = (df_fallas.groupby(col_det)['Tiempo (Min)']
-                     .sum()
-                     .reset_index()
-                     .sort_values('Tiempo (Min)', ascending=False)
-                     .head(15))
+        if not df_fallas_base.empty:
+            # --- NUEVO FILTRO INTERNO POR MÁQUINA ---
+            maquinas_con_fallas = sorted(df_fallas_base['Máquina'].unique())
+            sel_maq_falla = st.multiselect(
+                "🔍 Filtrar fallas por Máquina:", 
+                options=maquinas_con_fallas,
+                default=maquinas_con_fallas,
+                help="Seleccione máquinas específicas para ver sus fallas más frecuentes."
+            )
+            
+            # Aplicar filtro de máquina seleccionado en este bloque
+            df_fallas_filt = df_fallas_base[df_fallas_base['Máquina'].isin(sel_maq_falla)]
 
-            # Visualización solicitada: Etiqueta de dato, Gradiente de color y Orden
-            fig_fallas = px.bar(
-                top_f, 
-                x='Tiempo (Min)', 
-                y=col_det, 
-                orientation='h', 
-                title="Top 15 Causas de Paro por Falla (Minutos)",
-                text='Tiempo (Min)',             # Muestra el dato
-                color='Tiempo (Min)',           # Habilita el gradiente
-                color_continuous_scale='Reds',  # Gradiente de color rojo
-                labels={'Tiempo (Min)': 'Minutos Totales', col_det: 'Causa de Falla'}
-            )
-            
-            # Ajustes de etiquetas y visualización
-            fig_fallas.update_traces(
-                texttemplate='%{text:.0f} min',  # Formato de etiqueta
-                textposition='outside'           # Etiqueta fuera de la barra
-            )
-            
-            fig_fallas.update_layout(
-                coloraxis_showscale=False,      # Ocultar barra de escala lateral
-                yaxis={'categoryorder':'total ascending'}, # Mantiene el orden visual correcto
-                height=600,
-                margin=dict(l=20, r=50, t=50, b=20)
-            )
-            
-            st.plotly_chart(fig_fallas, use_container_width=True)
+            if not df_fallas_filt.empty:
+                # Procesar Top 15 ordenado de mayor a menor
+                top_f = (df_fallas_filt.groupby(col_det)['Tiempo (Min)']
+                         .sum()
+                         .reset_index()
+                         .sort_values('Tiempo (Min)', ascending=False)
+                         .head(15))
+
+                # Visualización con Gradiente y Etiquetas
+                fig_fallas = px.bar(
+                    top_f, 
+                    x='Tiempo (Min)', 
+                    y=col_det, 
+                    orientation='h', 
+                    title=f"Top 15 Causas de Paro por Falla (Minutos) - {len(sel_maq_falla)} máquina(s)",
+                    text='Tiempo (Min)',             
+                    color='Tiempo (Min)',           
+                    color_continuous_scale='Reds',  
+                    labels={'Tiempo (Min)': 'Minutos Totales', col_det: 'Causa de Falla'}
+                )
+                
+                fig_fallas.update_traces(
+                    texttemplate='%{text:.0f} min',  
+                    textposition='outside'           
+                )
+                
+                fig_fallas.update_layout(
+                    coloraxis_showscale=False,      
+                    yaxis={'categoryorder':'total ascending'}, 
+                    height=600,
+                    margin=dict(l=20, r=60, t=50, b=20)
+                )
+                
+                st.plotly_chart(fig_fallas, use_container_width=True)
+            else:
+                st.info("No hay registros de fallas para las máquinas seleccionadas en este filtro.")
         else:
-            st.info("No se encontraron registros de 'FALLA'.")
+            st.info("No se registraron paros por 'FALLA' en el periodo seleccionado.")
     else:
-        st.warning("No se encontraron las columnas de Nivel de Evento necesarias.")
+        st.warning("No se encontraron las columnas 'Nivel Evento 3' o 'Nivel Evento 6'.")
 
 st.divider()
 with st.expander("📂 Ver Registro Detallado de Eventos", expanded=False):
