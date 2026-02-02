@@ -355,7 +355,7 @@ with st.expander("☕ Tiempos de Baño y Refrigerio"):
 st.markdown("---")
 st.header("📈 INDICADORES DIARIOS")
 
-with st.expander("👉 Desplegar Análisis Diario (Operarios y Máquinas)", expanded=False):
+with st.expander("Desplegar Análisis Diario (Operarios y Máquinas)", expanded=False):
     if not df_op_f.empty:
         # 1. IDENTIFICACIÓN DE COLUMNAS
         col_op_name = next((c for c in df_op_f.columns if any(x in c.lower() for x in ['operador', 'nombre', 'empleado'])), None)
