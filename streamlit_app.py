@@ -156,21 +156,18 @@ with t2:
         st.markdown("**PRP**"); show_metric_row(get_metrics('PRP'))
 
 # ==========================================
-# 6. MÓDULO INDICADORES DIARIOS (CON TABLA DE DÍAS)
+# 6. MÓDULO INDICADORES POR OPERADOR
 # ==========================================
 st.markdown("---")
 st.header("📈 INDICADORES POR OPERADOR")
 with st.expander("👉 Ver Resumen y Evolución de Operarios", expanded=False):
     if not df_op_f.empty:
         col_op = next((c for c in df_op_f.columns if any(x in c.lower() for x in ['operador', 'nombre'])), 'Operador')
-        
-        # TABLA DE DÍAS REGISTRADOS (SOLICITADA)
         st.subheader("📋 Resumen de Días por Personal")
         df_dias = df_op_f.groupby(col_op)['Fecha_Filtro'].nunique().reset_index()
         df_dias.columns = ['Operador', 'Días con Registro']
         st.dataframe(df_dias.sort_values('Días con Registro', ascending=False), use_container_width=True, hide_index=True)
         
-        # GRÁFICO DE PERFORMANCE
         sel_ops = st.multiselect("Seleccione Operarios para Graficar:", sorted(df_op_f[col_op].unique()))
         if sel_ops:
             df_perf = df_op_f[df_op_f[col_op].isin(sel_ops)].sort_values('Fecha_Filtro')
@@ -189,22 +186,38 @@ with st.expander("☕ Tiempos de Baño y Refrigerio"):
                 st.dataframe(res.sort_values('sum', ascending=False), use_container_width=True)
 
 # ==========================================
-# 8. MÓDULO PRODUCCIÓN
+# 8. MÓDULO PRODUCCIÓN (CORREGIDO)
 # ==========================================
 st.markdown("---")
 st.header("Producción General")
 if not df_prod_f.empty:
-    c_maq, c_cod, c_b, c_r, c_o = 'Máquina', 'Código', 'Buenas', 'Retrabajo', 'Observadas'
-    df_st = df_prod_f.groupby(c_maq)[[c_b, c_r, c_o]].sum().reset_index()
-    st.plotly_chart(px.bar(df_st, x=c_maq, y=[c_b, c_r, c_o], title="Balance Producción", barmode='stack'), use_container_width=True)
+    # Identificar columnas dinámicamente para evitar KeyError
+    c_maq = next((c for c in df_prod_f.columns if 'máquina' in c.lower() or 'maquina' in c.lower()), None)
+    c_cod = next((c for c in df_prod_f.columns if 'código' in c.lower() or 'codigo' in c.lower()), None)
+    c_b = next((c for c in df_prod_f.columns if 'buenas' in c.lower()), 'Buenas')
+    c_r = next((c for c in df_prod_f.columns if 'retrabajo' in c.lower()), 'Retrabajo')
+    c_o = next((c for c in df_prod_f.columns if 'observadas' in c.lower()), 'Observadas')
+
+    if c_maq:
+        # Gráfico
+        df_st = df_prod_f.groupby(c_maq)[[c_b, c_r, c_o]].sum().reset_index()
+        st.plotly_chart(px.bar(df_st, x=c_maq, y=[c_b, c_r, c_o], title="Balance Producción", barmode='stack'), use_container_width=True)
     
-    with st.expander("📂 Tablas Detalladas por Código, Máquina y Fecha"):
-        df_prod_f['Fecha'] = df_prod_f['Fecha_Filtro'].dt.strftime('%d-%m-%Y')
-        df_tab = df_prod_f.groupby([c_cod, c_maq, 'Fecha'])[[c_b, c_r, c_o]].sum().reset_index()
-        st.dataframe(df_tab.sort_values([c_cod, 'Fecha'], ascending=[True, False]), use_container_width=True, hide_index=True)
+        # Tabla Detallada
+        with st.expander("📂 Tablas Detalladas por Código, Máquina y Fecha"):
+            # Creamos la columna de Fecha en texto para agrupar
+            df_prod_f['Fecha_Str'] = df_prod_f['Fecha_Filtro'].dt.strftime('%d-%m-%Y')
+            
+            # Agrupar solo con las columnas que existan
+            cols_group = [col for col in [c_cod, c_maq, 'Fecha_Str'] if col is not None]
+            df_tab = df_prod_f.groupby(cols_group)[[c_b, c_r, c_o]].sum().reset_index()
+            
+            # Ordenar
+            sort_cols = [c for c in [c_cod, 'Fecha_Str'] if c in df_tab.columns]
+            st.dataframe(df_tab.sort_values(sort_cols, ascending=[True, False]), use_container_width=True, hide_index=True)
 
 # ==========================================
-# 9. ANÁLISIS DE TIEMPOS (PROD VS PARADA)
+# 9. ANÁLISIS DE TIEMPOS
 # ==========================================
 st.markdown("---")
 st.header("Análisis de Tiempos")
@@ -215,7 +228,7 @@ if not df_f.empty:
     with col2: st.plotly_chart(px.bar(df_f, x='Operador', y='Tiempo (Min)', color='Tipo', title="Por Operador", barmode='group'), use_container_width=True)
 
 # ==========================================
-# 10. ANÁLISIS DE FALLAS (GRADIENTE Y FILTRO)
+# 10. ANÁLISIS DE FALLAS
 # ==========================================
 st.markdown("---")
 st.header("Análisis de Fallas")
@@ -229,4 +242,4 @@ if not df_fallas.empty:
     st.plotly_chart(fig, use_container_width=True)
 
 st.divider()
-with st.expander("📂 Registro"): st.dataframe(df_f, use_container_width=True)
+with st.expander("📂 Registro Completo"): st.dataframe(df_f, use_container_width=True)
