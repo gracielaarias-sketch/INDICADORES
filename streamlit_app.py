@@ -32,23 +32,20 @@ def load_data():
             st.error("⚠️ No se encontró la configuración de secretos (.streamlit/secrets.toml).")
             return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-        gid_datos = "0"             
-        gid_oee = "1767654796"      
-        gid_prod = "315437448"      
-        gid_operarios = "354131379" 
+        gid_datos = "0"             # Paros
+        gid_oee = "1767654796"      # OEE
+        gid_prod = "315437448"      # PRODUCCION
+        gid_operarios = "354131379" # PERFO OPERARIOS
 
         base_export = url_base.split("/edit")[0] + "/export?format=csv&gid="
         
         def process_df(url):
             try:
                 df = pd.read_csv(url)
-            except Exception:
-                return pd.DataFrame()
+            except Exception: return pd.DataFrame()
             
-            cols_num = ['Tiempo (Min)', 'Cantidad', 'Piezas', 'Produccion', 'Total',
-                        'Buenas', 'Retrabajo', 'Observadas', 'Tiempo de Ciclo', 'Ciclo',
-                        'Eficiencia', 'Performance', 'Cumplimiento', 'Meta', 'Objetivo', 'OEE',
-                        'Disponibilidad', 'Calidad']
+            # Limpieza Numérica
+            cols_num = ['Tiempo (Min)', 'Buenas', 'Retrabajo', 'Observadas', 'OEE', 'Disponibilidad', 'Performance', 'Calidad', 'Eficiencia', 'Cumplimiento', 'Meta']
             for c in cols_num:
                 matches = [col for col in df.columns if c.lower() in col.lower()]
                 for match in matches:
@@ -56,15 +53,15 @@ def load_data():
                     df[match] = df[match].str.replace('%', '')
                     df[match] = pd.to_numeric(df[match], errors='coerce').fillna(0.0)
             
+            # Limpieza Fechas
             col_fecha = next((c for c in df.columns if 'fecha' in c.lower()), None)
             if col_fecha:
                 df['Fecha_DT'] = pd.to_datetime(df[col_fecha], dayfirst=True, errors='coerce')
                 df['Fecha_Filtro'] = df['Fecha_DT'].dt.normalize()
                 df = df.dropna(subset=['Fecha_Filtro'])
             
-            cols_texto = ['Fábrica', 'Máquina', 'Evento', 'Código', 'Producto', 'Referencia', 
-                          'Nivel Evento 3', 'Nivel Evento 4', 'Nivel Evento 5', 'Nivel Evento 6', 
-                          'Operador', 'Hora Inicio', 'Hora Fin', 'Nombre', 'Apellido', 'Turno']
+            # Rellenar Textos
+            cols_texto = ['Fábrica', 'Máquina', 'Evento', 'Código', 'Operador', 'Nivel Evento 3', 'Nivel Evento 4', 'Nivel Evento 6']
             for c_txt in cols_texto:
                 matches = [col for col in df.columns if c_txt.lower() in col.lower()]
                 for match in matches:
@@ -96,7 +93,6 @@ rango = st.sidebar.date_input("Periodo", [min_d, max_d], min_value=min_d, max_va
 
 st.sidebar.divider()
 st.sidebar.header("⚙️ Filtros")
-
 opciones_fabrica = sorted(df_raw['Fábrica'].unique())
 fábricas = st.sidebar.multiselect("Fábrica", opciones_fabrica, default=opciones_fabrica)
 
@@ -115,7 +111,7 @@ else:
     st.stop()
 
 # ==========================================
-# 4. FUNCIONES AUXILIARES
+# 4. FUNCIONES KPI
 # ==========================================
 def get_metrics(name_filter):
     m = {'OEE': 0.0, 'DISP': 0.0, 'PERF': 0.0, 'CAL': 0.0}
@@ -153,7 +149,7 @@ def show_historical_oee(filter_name, title):
             st.plotly_chart(fig, use_container_width=True)
 
 # ==========================================
-# 5. DASHBOARD PRINCIPAL Y PESTAÑAS
+# 5. MÓDULO OEE Y APERTURAS
 # ==========================================
 st.title("🏭 INDICADORES FAMMA")
 show_metric_row(get_metrics('GENERAL'))
@@ -163,79 +159,106 @@ with st.expander("📉 Ver Evolución Histórica OEE General"):
 st.divider()
 t1, t2 = st.tabs(["Estampado", "Soldadura"])
 with t1:
+    st.markdown("#### Total Estampado")
     show_metric_row(get_metrics('ESTAMPADO'))
     with st.expander("📉 Histórico Estampado"): show_historical_oee('ESTAMPADO', 'Estampado')
+    with st.expander("Ver detalle por Líneas"):
+        for linea in ['L1', 'L2', 'L3', 'L4']:
+            st.markdown(f"**{linea}**")
+            show_metric_row(get_metrics(linea))
+            st.markdown("---")
 with t2:
+    st.markdown("#### Total Soldadura")
     show_metric_row(get_metrics('SOLDADURA'))
     with st.expander("📉 Histórico Soldadura"): show_historical_oee('SOLDADURA', 'Soldadura')
+    with st.expander("Ver detalle"):
+        st.markdown("**Celdas Robotizadas**")
+        show_metric_row(get_metrics('CELDA'))
+        st.markdown("---")
+        st.markdown("**PRP**")
+        show_metric_row(get_metrics('PRP'))
 
 # ==========================================
-# 7. PRODUCCIÓN GENERAL (TABLAS SOLICITADAS)
+# 6. MÓDULO BAÑO Y REFRIGERIO
+# ==========================================
+st.markdown("---")
+with st.expander("☕ Tiempos de Baño y Refrigerio", expanded=False):
+    tab_b, tab_r = st.tabs(["Baño", "Refrigerio"])
+    for i, label in enumerate(["Baño", "Refrigerio"]):
+        with [tab_b, tab_r][i]:
+            df_desc = df_f[df_f['Nivel Evento 4'].astype(str).str.contains(label, case=False)]
+            if not df_desc.empty:
+                res = df_desc.groupby('Operador')['Tiempo (Min)'].agg(['sum', 'mean', 'count']).reset_index()
+                res.columns = ['Operador', 'Total Min', 'Promedio Min', 'Eventos']
+                st.dataframe(res.sort_values('Total Min', ascending=False), use_container_width=True, hide_index=True)
+            else: st.info(f"Sin registros de {label}")
+
+# ==========================================
+# 7. PERFORMANCE POR OPERARIO
+# ==========================================
+st.markdown("---")
+st.header("📈 INDICADORES DIARIOS (OPERARIOS)")
+with st.expander("👉 Ver Análisis de Performance", expanded=False):
+    if not df_op_f.empty:
+        col_op = next((c for c in df_op_f.columns if 'nombre' in c.lower() or 'operador' in c.lower()), 'Operador')
+        sel_ops = st.multiselect("Seleccione Operarios:", sorted(df_op_f[col_op].unique()), key="perf_ops")
+        if sel_ops:
+            df_filt_op = df_op_f[df_op_f[col_op].isin(sel_ops)].sort_values('Fecha_Filtro')
+            st.plotly_chart(px.line(df_filt_op, x='Fecha_Filtro', y='Performance', color=col_op, markers=True, title="Evolución de Performance"), use_container_width=True)
+
+# ==========================================
+# 8. MÓDULO PRODUCCIÓN (GRÁFICO Y TABLAS DETALLADAS)
 # ==========================================
 st.markdown("---")
 st.header("Producción General")
 if not df_prod_f.empty:
-    col_maq_p = next((c for c in df_prod_f.columns if 'maquina' in c.lower() or 'máquina' in c.lower()), None)
-    col_cod_p = next((c for c in df_prod_f.columns if 'código' in c.lower() or 'codigo' in c.lower()), None)
-    col_buenas_p = next((c for c in df_prod_f.columns if 'buenas' in c.lower()), None)
+    col_maq = next((c for c in df_prod_f.columns if 'máquina' in c.lower()), 'Máquina')
+    col_cod = next((c for c in df_prod_f.columns if 'código' in c.lower()), 'Código')
+    c_b, c_r, c_o = 'Buenas', 'Retrabajo', 'Observadas'
+    
+    # Gráfico de Barras Apiladas
+    df_stack = df_prod_f.groupby(col_maq)[[c_b, c_r, c_o]].sum().reset_index()
+    st.plotly_chart(px.bar(df_stack, x=col_maq, y=[c_b, c_r, c_o], title="Balance de Producción por Máquina", barmode='stack'), use_container_width=True)
 
-    if col_buenas_p:
-        st.metric("Total Piezas Buenas (Global)", f"{df_prod_f[col_buenas_p].sum():,.0f}")
-        
-        c1, c2 = st.columns(2)
-        with c1:
-            st.subheader("📦 Producción por Máquina")
-            df_m = df_prod_f.groupby(col_maq_p)[col_buenas_p].sum().reset_index().sort_values(col_buenas_p, ascending=False)
-            st.dataframe(df_m, use_container_width=True, hide_index=True)
-        with c2:
-            st.subheader("🔢 Producción por Código")
-            df_c = df_prod_f.groupby(col_cod_p)[col_buenas_p].sum().reset_index().sort_values(col_buenas_p, ascending=False)
-            st.dataframe(df_c, use_container_width=True, hide_index=True)
+    with st.expander("📂 Tablas de Producción Detallada"):
+        df_prod_f['Fecha'] = df_prod_f['Fecha_Filtro'].dt.strftime('%d-%m-%Y')
+        df_det = df_prod_f.groupby([col_cod, col_maq, 'Fecha'])[[c_b, c_r, c_o]].sum().reset_index()
+        st.dataframe(df_det.sort_values([col_cod, 'Fecha'], ascending=[True, False]), use_container_width=True, hide_index=True)
 
 # ==========================================
-# 8. ANÁLISIS DE TIEMPOS (PRODUCCIÓN VS PARADA)
+# 9. TIEMPOS: PROD VS PARADA POR OPERARIO
 # ==========================================
 st.markdown("---")
-st.header("Análisis de Tiempos y Desempeño")
+st.header("Análisis de Tiempos")
 if not df_f.empty:
-    # Cálculo de métricas de tiempo
-    t_produccion = df_f[df_f['Evento'].astype(str).str.contains('Producción', case=False)]['Tiempo (Min)'].sum()
-    t_parada = df_f[~df_f['Evento'].astype(str).str.contains('Producción', case=False)]['Tiempo (Min)'].sum()
+    df_f['Tipo_Evento'] = df_f['Evento'].apply(lambda x: 'Producción' if 'Producción' in str(x) else 'Parada')
     
-    col1, col2 = st.columns(2)
+    col1, col2 = st.columns([1, 2])
     with col1:
-        fig_pie = px.pie(values=[t_produccion, t_parada], names=['Producción', 'Parada'], 
-                         title="Distribución Total de Tiempo", color_discrete_sequence=['#2ecc71', '#e74c3c'], hole=0.4)
-        st.plotly_chart(fig_pie, use_container_width=True)
-    
+        st.plotly_chart(px.pie(df_f, values='Tiempo (Min)', names='Tipo_Evento', title="Eficiencia de Tiempo Global", color_discrete_sequence=['#2ecc71', '#e74c3c'], hole=0.4), use_container_width=True)
     with col2:
-        st.subheader("Tiempos por Operario")
-        # Gráfico solicitado de parada y producción por operario
-        fig_op_time = px.bar(df_f, x='Operador', y='Tiempo (Min)', color='Evento', 
-                             title="Distribución de Tiempo por Operario", barmode='stack')
-        st.plotly_chart(fig_op_time, use_container_width=True)
+        fig_op = px.bar(df_f, x='Operador', y='Tiempo (Min)', color='Tipo_Evento', title="Producción vs Parada por Operario", barmode='group')
+        st.plotly_chart(fig_op, use_container_width=True)
 
 # ==========================================
-# 9. ANÁLISIS DE FALLAS (GRADIENTE Y FILTRO)
+# 10. ANÁLISIS DE FALLAS (CON GRADIENTE Y FILTRO)
 # ==========================================
 st.markdown("---")
 st.header("Análisis de Fallas")
-if not df_f.empty:
-    col_cat = next((c for c in df_f.columns if 'nivel evento 3' in c.lower()), None)
-    col_det = next((c for c in df_f.columns if 'nivel evento 6' in c.lower()), None)
-    if col_cat and col_det:
-        df_fallas_base = df_f[df_f[col_cat].astype(str).str.contains('FALLA', case=False)].copy()
-        if not df_fallas_base.empty:
-            sel_maq_f = st.multiselect("🔍 Máquinas en Fallas:", options=sorted(df_fallas_base['Máquina'].unique()), default=sorted(df_fallas_base['Máquina'].unique()))
-            df_filt = df_fallas_base[df_fallas_base['Máquina'].isin(sel_maq_f)]
-            if not df_filt.empty:
-                top_f = df_filt.groupby(col_det)['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False).head(15)
-                fig_f = px.bar(top_f, x='Tiempo (Min)', y=col_det, orientation='h', title="Top 15 Fallas", text='Tiempo (Min)', color='Tiempo (Min)', color_continuous_scale='Reds')
-                fig_f.update_traces(texttemplate='%{text:.0f} min', textposition='outside')
-                fig_f.update_layout(coloraxis_showscale=False, yaxis={'categoryorder':'total ascending'}, height=600)
-                st.plotly_chart(fig_f, use_container_width=True)
-                
+col_cat, col_det = 'Nivel Evento 3', 'Nivel Evento 6'
+df_fallas = df_f[df_f[col_cat].astype(str).str.contains('FALLA', case=False)].copy()
+
+if not df_fallas.empty:
+    sel_maq_f = st.multiselect("Filtrar máquinas para fallas:", sorted(df_fallas['Máquina'].unique()), default=sorted(df_fallas['Máquina'].unique()), key="falla_maq")
+    df_filt_f = df_fallas[df_fallas['Máquina'].isin(sel_maq_f)]
+    
+    top_f = df_filt_f.groupby(col_det)['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False).head(15)
+    fig_f = px.bar(top_f, x='Tiempo (Min)', y=col_det, orientation='h', title="Top 15 Fallas (Gradiente Rojo)", text='Tiempo (Min)', color='Tiempo (Min)', color_continuous_scale='Reds')
+    fig_f.update_traces(texttemplate='%{text:.0f} min', textposition='outside')
+    fig_f.update_layout(yaxis={'categoryorder':'total ascending'}, coloraxis_showscale=False, height=600)
+    st.plotly_chart(fig_f, use_container_width=True)
+    
 
 st.divider()
-with st.expander("📂 Ver Registro Detallado de Eventos"):
-    st.dataframe(df_f, use_container_width=True, hide_index=True)
+with st.expander("📂 Registro Crudo de Eventos"):
+    st.dataframe(df_f, use_container_width=True)
