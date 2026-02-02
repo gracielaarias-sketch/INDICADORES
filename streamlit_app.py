@@ -75,7 +75,7 @@ def load_data():
                 'Fábrica', 'Máquina', 'Evento', 'Código', 'Producto', 'Referencia', 
                 'Nivel Evento 3', 'Nivel Evento 4', 'Nivel Evento 5', 'Nivel Evento 6', 
                 'Operador', 'Hora Inicio', 'Hora Fin', 'Nombre', 'Apellido', 'Turno', 
-                'Usuario 1'
+                'Usuario 1', 'Usuario 2', 'Usuario 3', 'Usuario 4', 'Usuario 5', 'Usuario 6'
             ]
             for c_txt in cols_texto:
                 matches = [col for col in df.columns if c_txt.lower() in col.lower()]
@@ -360,7 +360,7 @@ st.header("📈 INDICADORES DIARIOS")
 
 if not df_op_f.empty:
     
-    # 1. IDENTIFICACIÓN DE COLUMNAS EN DF_OPERARIOS
+    # 1. IDENTIFICACIÓN DE COLUMNAS EN DF_OPERARIOS (Para el gráfico)
     col_op_name = next((c for c in df_op_f.columns if any(x in c.lower() for x in ['operador', 'nombre', 'empleado'])), None)
     
     # Buscamos la métrica principal a graficar
@@ -410,23 +410,40 @@ if not df_op_f.empty:
             st.plotly_chart(fig_daily, use_container_width=True)
 
             # ---------------------------------------------------------
-            # B. TABLA DE MÁQUINAS (CRUCE CON PRODUCCIÓN)
+            # B. TABLA DE MÁQUINAS (BÚSQUEDA USUARIO 1 A 6)
             # ---------------------------------------------------------
             st.markdown("#### 🏗️ Detalle de Actividad en Máquinas")
             
             if not df_prod_f.empty:
-                # Buscamos columnas en PRODUCCION
-                c_op_prod = next((c for c in df_prod_f.columns if any(x in c.lower() for x in ['usuario 1', 'operador'])), None)
+                # 1. Detectar columnas de producción
                 c_maq_prod = next((c for c in df_prod_f.columns if 'maquina' in c.lower() or 'máquina' in c.lower()), None)
                 c_piezas = next((c for c in df_prod_f.columns if 'buenas' in c.lower()), None)
                 
-                if c_op_prod and c_maq_prod:
-                    # Filtramos la tabla de producción con los MISMOS nombres seleccionados
-                    df_maq_op = df_prod_f[df_prod_f[c_op_prod].astype(str).isin(sel_operarios)].copy()
+                # 2. Detectar columnas de Usuario 1 a 6 dinámicamente
+                cols_usuarios = []
+                for i in range(1, 7): # Busca del 1 al 6
+                    col = next((c for c in df_prod_f.columns if 'usuario' in c.lower() and str(i) in c), None)
+                    if col:
+                        cols_usuarios.append(col)
+
+                if cols_usuarios and c_maq_prod:
+                    # 3. Transformación (Melt) para buscar en todas las columnas de usuario a la vez
+                    id_vars = ['Fecha_Filtro', c_maq_prod]
+                    if c_piezas: id_vars.append(c_piezas)
+                    
+                    # Convertimos tabla ancha a larga
+                    df_melted = df_prod_f.melt(
+                        id_vars=id_vars, 
+                        value_vars=cols_usuarios, 
+                        value_name='Operador_Encontrado'
+                    ).dropna(subset=['Operador_Encontrado'])
+                    
+                    # 4. Filtramos donde el 'Operador_Encontrado' esté en nuestra selección
+                    df_maq_op = df_melted[df_melted['Operador_Encontrado'].astype(str).isin(sel_operarios)].copy()
                     
                     if not df_maq_op.empty:
-                        # Agrupamos por Fecha, Operario y Máquina
-                        cols_group = ['Fecha_Filtro', c_op_prod, c_maq_prod]
+                        # Agrupamos por Fecha, Operario (Encontrado) y Máquina
+                        cols_group = ['Fecha_Filtro', 'Operador_Encontrado', c_maq_prod]
                         
                         if c_piezas:
                             df_table_maq = df_maq_op.groupby(cols_group)[c_piezas].sum().reset_index()
@@ -434,10 +451,10 @@ if not df_op_f.empty:
                             df_table_maq = df_maq_op.groupby(cols_group).size().reset_index(name='Registros')
                         
                         # Formato y Orden
-                        df_table_maq = df_table_maq.sort_values(by=['Fecha_Filtro', c_op_prod], ascending=[False, True])
+                        df_table_maq = df_table_maq.sort_values(by=['Fecha_Filtro', 'Operador_Encontrado'], ascending=[False, True])
                         df_table_maq['Fecha'] = df_table_maq['Fecha_Filtro'].dt.strftime('%d-%m-%Y')
                         
-                        cols_finales_t = ['Fecha', c_op_prod, c_maq_prod]
+                        cols_finales_t = ['Fecha', 'Operador_Encontrado', c_maq_prod]
                         if c_piezas: cols_finales_t.append(c_piezas)
                         
                         st.dataframe(
@@ -447,13 +464,13 @@ if not df_op_f.empty:
                             column_config={
                                 c_piezas: st.column_config.NumberColumn("Piezas Buenas", format="%d") if c_piezas else None,
                                 c_maq_prod: "Máquina",
-                                c_op_prod: "Operario"
+                                'Operador_Encontrado': "Operario"
                             }
                         )
                     else:
-                        st.warning(f"Los operarios seleccionados no tienen registros en la hoja de Producción para este periodo.")
+                        st.warning(f"Los operarios seleccionados no aparecen como Usuario (1-6) en Producción para este periodo.")
                 else:
-                    st.warning("No se pudieron identificar las columnas de 'Usuario' o 'Máquina' en la base de Producción.")
+                    st.warning("No se encontraron las columnas 'Usuario 1...6' o 'Máquina' en la base de Producción.")
             else:
                 st.info("No hay datos de producción cargados para cruzar información.")
                 
@@ -463,7 +480,6 @@ if not df_op_f.empty:
         st.warning("No se detectaron columnas de métricas (OEE/Performance) o Nombres en la data de operarios.")
 else:
     st.info("No hay datos de 'Performance Operarios' disponibles para este rango de fechas.")
-
 
 # ==========================================
 # 7. SECCIÓN PRODUCCIÓN GENERAL
