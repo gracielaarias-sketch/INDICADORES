@@ -471,15 +471,19 @@ if not df_prod_f.empty:
         if col_ciclo: agg_dict[col_ciclo] = 'mean'
 
         if agg_dict:
-            df_grouped = df_prod_f.groupby([col_maq, col_cod]).agg(agg_dict).reset_index()
+            # Calculamos agrupación para el gráfico (Total por maq y cod)
+            df_grouped_total = df_prod_f.groupby([col_maq, col_cod]).agg(agg_dict).reset_index()
             
-            total_buenas = df_grouped[col_buenas].sum() if col_buenas else 0
+            total_buenas = df_grouped_total[col_buenas].sum() if col_buenas else 0
             st.metric("Total Piezas Buenas (Global)", f"{total_buenas:,.0f}")
 
+            # ----------------------------------------------------
+            # GRÁFICO DE BARRAS
+            # ----------------------------------------------------
             with st.expander("📊 Ver Gráfico de Barras de Producción", expanded=False):
                 cols_grafico = [c for c in [col_buenas, col_retrabajo, col_observadas] if c is not None]
                 if cols_grafico:
-                    df_melt = df_grouped.melt(id_vars=[col_maq, col_cod], value_vars=cols_grafico, var_name='Tipo', value_name='Cantidad')
+                    df_melt = df_grouped_total.melt(id_vars=[col_maq, col_cod], value_vars=cols_grafico, var_name='Tipo', value_name='Cantidad')
                     fig_prod = px.bar(
                         df_melt, x=col_maq, y='Cantidad', color='Tipo',
                         hover_data=[col_cod], title="Producción por Máquina",
@@ -487,23 +491,52 @@ if not df_prod_f.empty:
                     )
                     st.plotly_chart(fig_prod, use_container_width=True)
 
-            # TABLA DESPLEGABLE SOLICITADA: PRODUCCIÓN POR MÁQUINA Y CÓDIGO
-            with st.expander("📋 Detalle de Producción por Máquina y Código", expanded=False):
-                cols_finales = [col_maq, col_cod]
-                if col_buenas: cols_finales.append(col_buenas)
-                if col_retrabajo: cols_finales.append(col_retrabajo)
-                if col_observadas: cols_finales.append(col_observadas)
-                if col_ciclo: cols_finales.append(col_ciclo)
+            # ----------------------------------------------------
+            # TABLA 1: PRODUCCIÓN DETALLADA POR FECHA (Mantiene la "anterior")
+            # ----------------------------------------------------
+            with st.expander("📅 Producción Detallada por Fecha", expanded=False):
+                # Agrupamos también por Fecha
+                df_grouped_date = df_prod_f.groupby(['Fecha_Filtro', col_maq, col_cod]).agg(agg_dict).reset_index()
                 
-                # Ordenamos por Máquina y luego por Cantidad de Buenas (desc)
-                df_grouped_sorted = df_grouped.sort_values(by=[col_maq, col_buenas] if col_buenas else [col_maq], ascending=[True, False])
+                # Formato y Orden
+                df_grouped_date = df_grouped_date.sort_values(by=['Fecha_Filtro', col_maq], ascending=[False, True])
+                df_grouped_date['Fecha'] = df_grouped_date['Fecha_Filtro'].dt.strftime('%d-%m-%Y')
+
+                cols_finales_date = ['Fecha', col_maq, col_cod]
+                if col_buenas: cols_finales_date.append(col_buenas)
+                if col_retrabajo: cols_finales_date.append(col_retrabajo)
+                if col_observadas: cols_finales_date.append(col_observadas)
 
                 st.dataframe(
-                    df_grouped_sorted[cols_finales],
+                    df_grouped_date[cols_finales_date],
                     use_container_width=True, hide_index=True,
                     column_config={
-                        col_ciclo: st.column_config.NumberColumn("Ciclo (s)", format="%.1f s"),
                         col_buenas: st.column_config.NumberColumn("Buenas", format="%d"),
+                        col_maq: "Máquina",
+                        col_cod: "Código"
+                    }
+                )
+
+            # ----------------------------------------------------
+            # TABLA 2: SUMA TOTAL POR MÁQUINA Y PRODUCTO (Nueva tabla agregada)
+            # ----------------------------------------------------
+            with st.expander("∑ Resumen Acumulado por Máquina y Producto", expanded=False):
+                # Usamos el df_grouped_total que ya calculamos arriba (Sin fecha)
+                cols_finales_total = [col_maq, col_cod]
+                if col_buenas: cols_finales_total.append(col_buenas)
+                if col_retrabajo: cols_finales_total.append(col_retrabajo)
+                if col_observadas: cols_finales_total.append(col_observadas)
+                if col_ciclo: cols_finales_total.append(col_ciclo)
+                
+                # Ordenamos por Máquina y cantidad de piezas
+                df_grouped_total_sorted = df_grouped_total.sort_values(by=[col_maq, col_buenas] if col_buenas else [col_maq], ascending=[True, False])
+
+                st.dataframe(
+                    df_grouped_total_sorted[cols_finales_total],
+                    use_container_width=True, hide_index=True,
+                    column_config={
+                        col_ciclo: st.column_config.NumberColumn("Ciclo Prom (s)", format="%.1f s"),
+                        col_buenas: st.column_config.NumberColumn("Total Buenas", format="%d"),
                         col_maq: "Máquina",
                         col_cod: "Código de Producto"
                     }
