@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -239,9 +240,9 @@ with t2:
         show_metric_row(get_metrics('PRP'))
 
 # ==========================================
-# 5. BLOQUE DE OPERADORES
+# 5. BLOQUE DE HORARIOS Y DESCANSOS
 # ==========================================
-st.markdown("---") # Separador superior del bloque
+st.markdown("---") 
 
 # --- 5.1 INICIO Y FIN DE TURNO ---
 with st.expander("⏱️ Detalle de Horarios y Tiempos", expanded=False):
@@ -269,9 +270,9 @@ with st.expander("⏱️ Detalle de Horarios y Tiempos", expanded=False):
             df_calc['min_fin'] = df_calc[c_fin].apply(time_str_to_min)
             
             df_daily = df_calc.groupby([c_fecha, c_maq]).agg({
-                'min_ini': 'min',      
-                'min_fin': 'max',      
-                c_tiempo: 'sum'        
+                'min_ini': 'min',       
+                'min_fin': 'max',       
+                c_tiempo: 'sum'         
             }).reset_index()
 
             df_final_avg = df_daily.groupby(c_maq).agg({
@@ -350,117 +351,125 @@ with st.expander("☕ Tiempos de Baño y Refrigerio"):
     else:
         st.warning("No se encontró la columna 'Operador'.")
 
-# --- 5.3 PERFORMANCE DE OPERADORES ---
-with st.expander("📊 Perfo Promedio por Operador", expanded=True):
-    if not df_op_f.empty:
-        col_op = next((c for c in df_op_f.columns if any(x in c.lower() for x in ['operador', 'nombre', 'empleado'])), None)
+
+# =========================================================
+# 6. SECCIÓN NUEVA: INDICADORES DIARIOS (OPERARIOS + MÁQUINAS)
+# =========================================================
+st.markdown("---")
+st.header("📈 INDICADORES DIARIOS")
+
+if not df_op_f.empty:
+    
+    # 1. IDENTIFICACIÓN DE COLUMNAS EN DF_OPERARIOS
+    col_op_name = next((c for c in df_op_f.columns if any(x in c.lower() for x in ['operador', 'nombre', 'empleado'])), None)
+    
+    # Buscamos la métrica principal a graficar
+    cols_metrics = [c for c in df_op_f.select_dtypes(include=['number']).columns 
+                    if 'fecha' not in c.lower() and 'gid' not in c.lower()]
+    
+    # Prioridad: OEE -> Eficiencia -> Performance
+    col_metric_graph = next((c for c in cols_metrics if 'oee' in c.lower()), 
+                       next((c for c in cols_metrics if 'efic' in c.lower()), 
+                       next((c for c in cols_metrics if 'perf' in c.lower()), None)))
+
+    if col_op_name and col_metric_graph:
         
-        exclude_terms = ['parada', 'ciclo', 'buenas', 'retrabajo', 'observad', 'cantidad', 'produccion']
+        # 2. SELECTOR DE OPERARIOS
+        lista_operarios = sorted(df_op_f[col_op_name].astype(str).unique())
+        st.subheader("Selección de Personal")
         
-        cols_metrics = [c for c in df_op_f.select_dtypes(include=['number']).columns 
-                        if 'fecha' not in c.lower() 
-                        and 'year' not in c.lower() 
-                        and 'gid' not in c.lower()
-                        and not any(ex in c.lower() for ex in exclude_terms)]
+        sel_operarios = st.multiselect(
+            "👤 Seleccione Operarios para visualizar evolución:", 
+            lista_operarios,
+            placeholder="Escriba o seleccione nombres..."
+        )
 
-        if col_op and cols_metrics:
-            df_resumen_op = df_op_f.groupby(col_op)[cols_metrics].mean().reset_index()
-            
-            dias_trabajados = df_op_f.groupby(col_op)['Fecha_Filtro'].nunique().reset_index(name='Días')
-            df_resumen_op = pd.merge(df_resumen_op, dias_trabajados, on=col_op)
+        if sel_operarios:
+            # ---------------------------------------------------------
+            # A. GRÁFICO DE EVOLUCIÓN (PERFORMANCE DIARIA)
+            # ---------------------------------------------------------
+            df_graph = df_op_f[df_op_f[col_op_name].astype(str).isin(sel_operarios)].copy()
+            df_graph = df_graph.sort_values(by='Fecha_Filtro')
 
-            column_config = {}
-            for col in cols_metrics:
-                col_lower = col.lower()
-                if 'oee' in col_lower:
-                    if df_resumen_op[col].mean() > 1.0:
-                         column_config[col] = st.column_config.NumberColumn(col, format="%.1f %%")
-                    else:
-                         column_config[col] = st.column_config.NumberColumn(col, format="%.1%")
-                elif any(x in col_lower for x in ['efic', 'perf', 'cumpl', 'meta']):
-                    if df_resumen_op[col].mean() > 1.0:
-                         column_config[col] = st.column_config.NumberColumn(col, format="%.1f %%")
-                    else:
-                         column_config[col] = st.column_config.NumberColumn(col, format="%.1%")
-                else:
-                    column_config[col] = st.column_config.NumberColumn(col, format="%.0f")
-
-            if cols_metrics:
-                col_sort = next((c for c in cols_metrics if 'oee' in c.lower()), cols_metrics[0])
-                df_resumen_op = df_resumen_op.sort_values(by=col_sort, ascending=False)
-                
-                cols_ordenadas = [col_op] + [c for c in cols_metrics if 'oee' in c.lower()] + [c for c in cols_metrics if 'oee' not in c.lower()] + ['Días']
-                cols_finales = [c for c in cols_ordenadas if c in df_resumen_op.columns]
-
-                st.dataframe(
-                    df_resumen_op[cols_finales],
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config=column_config
-                )
-                st.caption(f"Promedios calculados.")
-            else:
-                st.warning("Se filtraron todas las columnas numéricas.")
-        else:
-            st.warning("No se detectaron columnas de Operador o métricas válidas.")
-    else:
-        st.info("No hay datos de operarios disponibles.")
-
-# --- 5.4 NUEVO: MAQUINAS POR USUARIO 1 POR FECHA (DESDE PRODUCCIÓN) ---
-with st.expander("🏗️ Máquinas por Operador", expanded=False):
-    if not df_prod_f.empty:
-        # Detectar columnas
-        c_op_prod = next((c for c in df_prod_f.columns if 'usuario 1' in c.lower()), None)
-        c_maq_prod = next((c for c in df_prod_f.columns if 'maquina' in c.lower() or 'máquina' in c.lower()), None)
-        c_piezas = next((c for c in df_prod_f.columns if 'buenas' in c.lower()), None)
-        
-        if c_op_prod and c_maq_prod:
-            # 🟢 1. SELECTOR DE USUARIO
-            unique_users = sorted(df_prod_f[c_op_prod].astype(str).unique())
-            sel_users = st.multiselect("🔍 Filtrar por Usuario 1:", unique_users, placeholder="Seleccione uno o varios (Deje vacío para ver todos)")
-
-            df_process = df_prod_f.copy()
+            # Escala
+            is_scale_100 = df_graph[col_metric_graph].max() > 1.5
             
-            # 🟢 2. FILTRADO
-            if sel_users:
-                df_process = df_process[df_process[c_op_prod].astype(str).isin(sel_users)]
-
-            # 🟢 3. AGRUPACIÓN (INCLUYENDO FECHA FILTRO PARA ORDENAR)
-            group_cols = [c_op_prod, c_maq_prod, 'Fecha_Filtro']
-            
-            if c_piezas:
-                grouped = df_process.groupby(group_cols)[c_piezas].sum().reset_index()
-            else:
-                grouped = df_process.groupby(group_cols).size().reset_index(name='Registros')
-            
-            # 🟢 4. ORDENAR POR FECHA (DESCENDENTE) Y LUEGO USUARIO
-            grouped = grouped.sort_values(by=['Fecha_Filtro', c_op_prod], ascending=[False, True])
-            
-            # 🟢 5. FORMATO DE FECHA VISUAL
-            grouped['Fecha'] = grouped['Fecha_Filtro'].dt.strftime('%d-%m-%Y')
-            
-            # Columnas a mostrar
-            final_cols = ['Fecha', c_op_prod, c_maq_prod]
-            if c_piezas: final_cols.append(c_piezas)
-            
-            st.dataframe(
-                grouped[final_cols],
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    c_piezas: st.column_config.NumberColumn("Piezas Buenas", format="%d") if c_piezas else None
-                }
+            fig_daily = px.line(
+                df_graph, 
+                x='Fecha_Filtro', 
+                y=col_metric_graph, 
+                color=col_op_name,
+                markers=True,
+                title=f"Evolución Diaria: {col_metric_graph}",
+                labels={'Fecha_Filtro': 'Fecha', col_metric_graph: 'Valor', col_op_name: 'Operario'}
             )
+            
+            if not is_scale_100:
+                fig_daily.update_layout(yaxis_tickformat='.0%')
+            
+            st.plotly_chart(fig_daily, use_container_width=True)
+
+            # ---------------------------------------------------------
+            # B. TABLA DE MÁQUINAS (CRUCE CON PRODUCCIÓN)
+            # ---------------------------------------------------------
+            st.markdown("#### 🏗️ Detalle de Actividad en Máquinas")
+            
+            if not df_prod_f.empty:
+                # Buscamos columnas en PRODUCCION
+                c_op_prod = next((c for c in df_prod_f.columns if any(x in c.lower() for x in ['usuario 1', 'operador'])), None)
+                c_maq_prod = next((c for c in df_prod_f.columns if 'maquina' in c.lower() or 'máquina' in c.lower()), None)
+                c_piezas = next((c for c in df_prod_f.columns if 'buenas' in c.lower()), None)
+                
+                if c_op_prod and c_maq_prod:
+                    # Filtramos la tabla de producción con los MISMOS nombres seleccionados
+                    df_maq_op = df_prod_f[df_prod_f[c_op_prod].astype(str).isin(sel_operarios)].copy()
+                    
+                    if not df_maq_op.empty:
+                        # Agrupamos por Fecha, Operario y Máquina
+                        cols_group = ['Fecha_Filtro', c_op_prod, c_maq_prod]
+                        
+                        if c_piezas:
+                            df_table_maq = df_maq_op.groupby(cols_group)[c_piezas].sum().reset_index()
+                        else:
+                            df_table_maq = df_maq_op.groupby(cols_group).size().reset_index(name='Registros')
+                        
+                        # Formato y Orden
+                        df_table_maq = df_table_maq.sort_values(by=['Fecha_Filtro', c_op_prod], ascending=[False, True])
+                        df_table_maq['Fecha'] = df_table_maq['Fecha_Filtro'].dt.strftime('%d-%m-%Y')
+                        
+                        cols_finales_t = ['Fecha', c_op_prod, c_maq_prod]
+                        if c_piezas: cols_finales_t.append(c_piezas)
+                        
+                        st.dataframe(
+                            df_table_maq[cols_finales_t],
+                            use_container_width=True,
+                            hide_index=True,
+                            column_config={
+                                c_piezas: st.column_config.NumberColumn("Piezas Buenas", format="%d") if c_piezas else None,
+                                c_maq_prod: "Máquina",
+                                c_op_prod: "Operario"
+                            }
+                        )
+                    else:
+                        st.warning(f"Los operarios seleccionados no tienen registros en la hoja de Producción para este periodo.")
+                else:
+                    st.warning("No se pudieron identificar las columnas de 'Usuario' o 'Máquina' en la base de Producción.")
+            else:
+                st.info("No hay datos de producción cargados para cruzar información.")
+                
         else:
-            st.warning("No se encontraron las columnas 'Usuario 1' o 'Máquina' en la pestaña Producción.")
+            st.info("👆 Seleccione al menos un operario para ver sus gráficas y tablas.")
     else:
-        st.info("No hay datos de producción disponibles para este periodo.")
+        st.warning("No se detectaron columnas de métricas (OEE/Performance) o Nombres en la data de operarios.")
+else:
+    st.info("No hay datos de 'Performance Operarios' disponibles para este rango de fechas.")
+
 
 # ==========================================
-# 6. SECCIÓN PRODUCCIÓN
+# 7. SECCIÓN PRODUCCIÓN GENERAL
 # ==========================================
-st.markdown("---") # Separador inferior del bloque
-st.header("Producción")
+st.markdown("---") 
+st.header("Producción General")
 
 if not df_prod_f.empty:
     col_maq = next((c for c in df_prod_f.columns if 'máquina' in c.lower() or 'maquina' in c.lower()), None)
@@ -481,7 +490,7 @@ if not df_prod_f.empty:
             df_grouped = df_prod_f.groupby([col_maq, col_cod]).agg(agg_dict).reset_index()
             
             total_buenas = df_grouped[col_buenas].sum() if col_buenas else 0
-            st.metric("Total Piezas Buenas", f"{total_buenas:,.0f}")
+            st.metric("Total Piezas Buenas (Global)", f"{total_buenas:,.0f}")
 
             with st.expander("📊 Ver Gráfico de Barras de Producción", expanded=False):
                 cols_grafico = [c for c in [col_buenas, col_retrabajo, col_observadas] if c is not None]
@@ -515,7 +524,7 @@ else:
     st.info("No hay datos de producción.")
 
 # ==========================================
-# 7. ANÁLISIS DE TIEMPOS Y PAROS
+# 8. ANÁLISIS DE TIEMPOS Y PAROS
 # ==========================================
 st.markdown("---")
 st.header("Análisis de Tiempos y Fallas")
@@ -550,7 +559,7 @@ if not df_f.empty:
         st.plotly_chart(fig_pareto, use_container_width=True)
 
 # ==========================================
-# 8. TABLA DETALLADA
+# 9. TABLA DETALLADA
 # ==========================================
 st.divider()
 with st.expander("📂 Ver Registro Detallado de Eventos", expanded=True):
