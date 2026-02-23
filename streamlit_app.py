@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -248,7 +247,7 @@ st.divider()
 with st.expander("📂 Registro Completo"): st.dataframe(df_f, use_container_width=True)
 
 # ==========================================
-# 11. EXPORTACIÓN A PDF POR ÁREA (MODIFICADO CON COLORES)
+# 11. EXPORTACIÓN A PDF POR ÁREA (MODIFICADO CON COLORES Y FECHAS)
 # ==========================================
 st.markdown("---")
 st.header("📄 Exportar Reportes PDF")
@@ -311,7 +310,16 @@ def generar_pdf_area(area_nombre, lineas):
     # TÍTULO PRINCIPAL
     pdf.set_text_color(41, 128, 185)
     pdf.set_font("Arial", 'B', 16)
-    pdf.cell(0, 10, f"REPORTE DE INDICADORES - {area_nombre.upper()}", ln=True, align='C')
+    pdf.cell(0, 8, f"REPORTE DE INDICADORES - {area_nombre.upper()}", ln=True, align='C')
+    
+    # AGREGADO DE FECHA
+    pdf.set_font("Arial", 'I', 11)
+    pdf.set_text_color(100, 100, 100) # Gris oscuro para la fecha
+    if ini == fin:
+        texto_fecha = f"Fecha: {ini.strftime('%d/%m/%Y')}"
+    else:
+        texto_fecha = f"Periodo: {ini.strftime('%d/%m/%Y')} al {fin.strftime('%d/%m/%Y')}"
+    pdf.cell(0, 6, texto_fecha, ln=True, align='C')
     pdf.ln(5)
     
     # ---------------------------------------------------------
@@ -323,6 +331,7 @@ def generar_pdf_area(area_nombre, lineas):
     # Fila global resaltada
     pdf.set_fill_color(214, 234, 248) # Fondo azul muy suave
     pdf.set_font("Arial", 'B', 11)
+    pdf.set_text_color(0, 0, 0)
     pdf.cell(0, 8, f" GLOBAL {area_nombre}: OEE {m_gen['OEE']*100:.1f}% | Disp: {m_gen['DISP']*100:.0f}% | Perf: {m_gen['PERF']*100:.0f}% | Cal: {m_gen['CAL']*100:.0f}%", ln=True, fill=True)
     
     pdf.set_font("Arial", '', 10)
@@ -336,7 +345,7 @@ def generar_pdf_area(area_nombre, lineas):
     df_area = df_f[mask_f].copy()
 
     # ---------------------------------------------------------
-    # 2. TOP FALLAS Y GRÁFICO (AHORA EN 2DO LUGAR)
+    # 2. TOP FALLAS Y GRÁFICO 
     # ---------------------------------------------------------
     titulo_seccion("2. Top 10 Fallas (Tiempo y Frecuencia)")
     df_fallas_area = df_area[df_area['Nivel Evento 3'].astype(str).str.contains('FALLA', case=False)]
@@ -355,19 +364,19 @@ def generar_pdf_area(area_nombre, lineas):
                 pdf.ln(3)
                 pdf.image(tmp_img.name, x=10, w=180)
         except Exception:
-            pass # Falla silenciosa de la imagen si algo sale mal
+            pass 
     else:
         pdf.cell(0, 8, "No se registraron fallas en este periodo.", ln=True)
 
     pdf.add_page() # Pasamos a la hoja 2
 
     # ---------------------------------------------------------
-    # 3. PARADA Y PRODUCCIÓN (AHORA EN GRÁFICO CON COLORES)
+    # 3. PARADA Y PRODUCCIÓN (GRÁFICO CON COLORES)
     # ---------------------------------------------------------
     titulo_seccion("3. Analisis de Eventos: Produccion vs Paradas")
     if not df_area.empty and 'Tipo' in df_area.columns:
         df_ev = df_area.groupby(['Tipo', 'Evento'])['Tiempo (Min)'].sum().reset_index()
-        df_ev_top = df_ev.sort_values('Tiempo (Min)', ascending=False).head(15) # Top 15 total
+        df_ev_top = df_ev.sort_values('Tiempo (Min)', ascending=False).head(15) 
         
         try:
             # Colores: Produccion en Verde, Parada en Rojo
