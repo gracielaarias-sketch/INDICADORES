@@ -61,7 +61,7 @@ def load_data():
 df_raw, df_oee_raw, df_prod_raw, df_operarios_raw = load_data()
 
 # ==========================================
-# 3. FILTROS GLOBALES
+# 3. FILTROS GLOBALES (APP)
 # ==========================================
 if df_raw.empty:
     st.warning("No hay datos cargados.")
@@ -113,7 +113,7 @@ def show_metric_row(m):
     c3.metric("Perf.", f"{m['PERF']:.1%}"); c4.metric("Calidad", f"{m['CAL']:.1%}")
 
 # ==========================================
-# 5. DASHBOARD (LAYOUT ORIGINAL)
+# 5. DASHBOARD (LAYOUT ORIGINAL CON EXPANDERS)
 # ==========================================
 st.title("🏭 INDICADORES FAMMA")
 show_metric_row(get_metrics(df_oee_f, 'GENERAL'))
@@ -150,31 +150,33 @@ st.header("Producción General")
 if not df_prod_f.empty:
     c_maq = next((c for c in df_prod_f.columns if 'maquina' in c.lower()), 'Máquina')
     df_st = df_prod_f.groupby(c_maq)[['Buenas', 'Retrabajo']].sum().reset_index()
-    st.plotly_chart(px.bar(df_st, x=c_maq, y=['Buenas', 'Retrabajo'], barmode='stack'), use_container_width=True)
+    st.plotly_chart(px.bar(df_st, x=c_maq, y=['Buenas', 'Retrabajo'], barmode='stack', color_discrete_map={'Buenas': '#2ecc71', 'Retrabajo': '#f1c40f'}), use_container_width=True)
 
 st.markdown("---")
 st.header("Análisis de Tiempos")
-df_f['Tipo'] = df_f['Evento'].apply(lambda x: 'Producción' if 'Producción' in str(x) else 'Parada')
-st.plotly_chart(px.pie(df_f, values='Tiempo (Min)', names='Tipo', hole=0.4), use_container_width=True)
+df_f_tipo = df_f.copy()
+df_f_tipo['Tipo'] = df_f_tipo['Evento'].apply(lambda x: 'Producción' if 'Producción' in str(x) else 'Parada')
+st.plotly_chart(px.pie(df_f_tipo, values='Tiempo (Min)', names='Tipo', hole=0.4, color='Tipo', color_discrete_map={'Producción': '#2ecc71', 'Parada': '#e74c3c'}), use_container_width=True)
 
 st.markdown("---")
 st.header("Análisis de Fallas")
-df_fallas = df_f[df_f['Nivel Evento 3'].astype(str).str.contains('FALLA', case=False)].copy()
-if not df_fallas.empty:
-    top_f = df_fallas.groupby('Nivel Evento 6')['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False).head(15)
-    st.plotly_chart(px.bar(top_f, x='Tiempo (Min)', y='Nivel Evento 6', orientation='h'), use_container_width=True)
+df_fallas_app = df_f[df_f['Nivel Evento 3'].astype(str).str.contains('FALLA', case=False)].copy()
+if not df_fallas_app.empty:
+    top_f = df_fallas_app.groupby('Nivel Evento 6')['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False).head(15)
+    st.plotly_chart(px.bar(top_f, x='Tiempo (Min)', y='Nivel Evento 6', orientation='h', color='Tiempo (Min)', color_continuous_scale='Reds'), use_container_width=True)
 
 st.divider()
 with st.expander("📂 Registro Completo"): st.dataframe(df_f, use_container_width=True)
 
 # ==========================================
-# 11. MÓDULO PDF (REPORTE DIARIO DEFINITIVO)
+# 11. MÓDULO PDF (FILTRO DIARIO ESTRICTO + COLORES)
 # ==========================================
 st.markdown("---")
 st.header("📄 Generar Reporte PDF")
 
+# Selector de día para el reporte (Lista de df_raw para ver todos los días disponibles)
 dias_disponibles_reporte = sorted(df_raw['Fecha_Filtro'].dt.date.unique(), reverse=True)
-dia_reporte = st.selectbox("📅 Seleccione Fecha para el Reporte PDF:", dias_disponibles_reporte)
+dia_reporte = st.selectbox("📅 Seleccione Fecha EXCLUSIVA para el Reporte PDF:", dias_disponibles_reporte)
 
 def clean_txt(t): return str(t).encode('latin-1', 'replace').decode('latin-1')
 
@@ -192,23 +194,23 @@ def generar_pdf_original(area_nombre, fecha_sel):
     pdf = FPDF(); pdf.add_page(); pdf.set_font("Arial", 'B', 14)
     fecha_dt = pd.to_datetime(fecha_sel)
     
-    # 1. FILTRADO ESTRICTO POR DÍA (DESDE BASE RAW)
+    # 1. FILTRADO ESTRICTO DESDE RAW (ELIMINA ACUMULADOS)
     df_dia = df_raw[df_raw['Fecha_Filtro'] == fecha_dt]
     df_area = df_dia[df_dia[col_planta].str.upper().str.contains(area_nombre.upper())]
     
     if df_area.empty:
-        st.error(f"No hay datos para {area_nombre} en la fecha {fecha_sel}")
+        st.error(f"No hay registros de DATOS para {area_nombre} el día {fecha_sel}")
         return None
 
     df_oee_dia = df_oee_raw[df_oee_raw['Fecha_Filtro'] == fecha_dt]
     df_prod_dia = df_prod_raw[df_prod_raw['Fecha_Filtro'] == fecha_dt]
 
-    # TÍTULO
+    # ENCABEZADO
     pdf.cell(0, 10, clean_txt(f"REPORTE DE INDICADORES - {area_nombre.upper()}"), ln=True, align='L')
     pdf.set_font("Arial", '', 11)
-    pdf.cell(0, 8, clean_txt(f"Fecha: {fecha_sel.strftime('%d/%m/%Y')}"), ln=True); pdf.ln(4)
+    pdf.cell(0, 8, clean_txt(f"Fecha del Reporte: {fecha_sel.strftime('%d/%m/%Y')}"), ln=True); pdf.ln(4)
 
-    # 1. KPIs
+    # SEC 1: KPIs
     pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "1. KPIs Generales y por Maquina", ln=True)
     m = get_metrics(df_oee_dia, area_nombre)
     pdf.set_font("Arial", '', 10)
@@ -220,63 +222,65 @@ def generar_pdf_original(area_nombre, fecha_sel):
         pdf.cell(10); pdf.cell(0, 6, clean_txt(f"- {maq}: OEE {m_maq['OEE']:.1%} (Disp: {m_maq['DISP']:.1%} / Perf: {m_maq['PERF']:.1%} / Cal: {m_maq['CAL']:.1%})"), ln=True)
     pdf.ln(5)
 
-    # 2. TOP 10 FALLAS (DIA SELECCIONADO)
-    pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "2. Top 10 Fallas (Tiempo y Frecuencia)", ln=True)
+    # SEC 2: FALLAS (TABLA Y GRÁFICO COLOR ROJO)
+    pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "2. Top 10 Fallas del Dia (Tiempo)", ln=True)
     df_fal_dia = df_area[df_area['Nivel Evento 3'].str.contains('FALLA', case=False)]
     if not df_fal_dia.empty:
         top_f_pdf = df_fal_dia.groupby('Nivel Evento 6')['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False).head(10)
         draw_table_custom(pdf, top_f_pdf, [140, 50])
         
-        # Gráfico de Fallas Diario
-        fig_fal = px.bar(top_f_pdf, x='Tiempo (Min)', y='Nivel Evento 6', orientation='h', title=f"Top Fallas - {fecha_sel}")
+        fig_fal = px.bar(top_f_pdf, x='Tiempo (Min)', y='Nivel Evento 6', orientation='h', color='Tiempo (Min)', color_continuous_scale='Reds')
+        fig_fal.update_layout(showlegend=False, coloraxis_showscale=False)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
             fig_fal.write_image(tmp.name); pdf.ln(2); pdf.image(tmp.name, x=10, w=160); os.remove(tmp.name)
     pdf.ln(5)
 
-    # 3. ANALISIS DE EVENTOS (DIA SELECCIONADO)
-    pdf.add_page(); pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "3. Analisis de Eventos: Producción vs Paradas", ln=True)
-    df_area_tipo = df_area.copy()
-    # Corrección de acento para capturar Producción correctamente
-    df_area_tipo['Tipo'] = df_area_tipo['Evento'].apply(lambda x: 'Producción' if 'Producción' in str(x) else 'Parada')
+    # SEC 3: BALANCE (GRÁFICO VERDE/ROJO)
+    pdf.add_page(); pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "3. Analisis de Eventos: Produccion vs Paradas", ln=True)
+    df_area_bal = df_area.copy()
+    df_area_bal['Tipo'] = df_area_bal['Evento'].apply(lambda x: 'Produccion' if 'Producción' in str(x) else 'Parada')
     
-    fig_pie = px.pie(df_area_tipo, values='Tiempo (Min)', names='Tipo', title=f"Balance Producción vs Parada - {fecha_sel}")
+    fig_pie = px.pie(df_area_bal, values='Tiempo (Min)', names='Tipo', color='Tipo', 
+                     color_discrete_map={'Produccion': '#2ecc71', 'Parada': '#e74c3c'})
     with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
         fig_pie.write_image(tmp.name); pdf.image(tmp.name, x=30, w=140); os.remove(tmp.name)
     pdf.ln(5)
 
-    # 4. TIEMPOS TOTALES POR OPERADOR (DIA SELECCIONADO)
-    pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "4. Tiempos Totales por Operador (Min)", ln=True)
+    # SEC 4: TIEMPO POR OPERADOR (SOLO DIA)
+    pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "4. Tiempos Totales por Operador (Min) del Dia", ln=True)
     df_op_dia_sum = df_area.groupby('Operador')['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False)
     draw_table_custom(pdf, df_op_dia_sum, [140, 50])
     pdf.ln(5)
 
-    # 5. REGISTRO DE PARADAS DETALLADO (DIA SELECCIONADO)
-    pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "5. Registro de Fallas Detallado por Maquina", ln=True)
+    # SEC 5: DETALLE DE FALLAS (QUIEN LEVANTO)
+    pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "5. Registro de Fallas Detallado (Maquina y Operador)", ln=True)
     if not df_fal_dia.empty:
         for maq in maquinas_area:
             df_m = df_fal_dia[df_fal_dia['Máquina'] == maq]
             if not df_m.empty:
                 pdf.set_font("Arial", 'B', 10); pdf.cell(0, 7, clean_txt(f"Maq: {maq}"), ln=True)
                 res_m = df_m.groupby(['Nivel Evento 6', 'Operador'])['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False)
-                res_m.columns = ['Falla', 'Levantó Parada', 'Min']
+                res_m.columns = ['Falla', 'Levanto Parada', 'Min']
                 draw_table_custom(pdf, res_m, [80, 70, 40]); pdf.ln(4)
 
-    # 6. PRODUCCION TOTAL POR MAQUINA (DIA SELECCIONADO)
-    pdf.add_page(); pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "6. Produccion Total por Maquina", ln=True)
+    # SEC 6: PRODUCCION (SOLO DIA)
+    pdf.add_page(); pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "6. Produccion Total del Dia por Maquina", ln=True)
     df_prod_area = df_prod_dia[df_prod_dia['Máquina'].isin(maquinas_area)]
     if not df_prod_area.empty:
         res_prod = df_prod_area.groupby('Máquina')[['Buenas', 'Retrabajo', 'Observadas']].sum().reset_index()
         draw_table_custom(pdf, res_prod, [70, 40, 40, 40])
+    else:
+        pdf.cell(0, 8, "No hay registros de produccion para este dia.", ln=True)
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         pdf.output(tmp.name); return open(tmp.name, "rb").read()
 
-col1, col2 = st.columns(2)
-with col1:
+col_btn1, col_btn2 = st.columns(2)
+with col_btn1:
     if st.button("🏗️ Descargar PDF Estampado"):
         res = generar_pdf_original("ESTAMPADO", dia_reporte)
         if res: st.download_button(f"Confirmar Estampado {dia_reporte}", res, f"Reporte_Estampado_{dia_reporte}.pdf")
-with col2:
+with col_btn2:
     if st.button("🤖 Descargar PDF Soldadura"):
         res = generar_pdf_original("SOLDADURA", dia_reporte)
         if res: st.download_button(f"Confirmar Soldadura {dia_reporte}", res, f"Reporte_Soldadura_{dia_reporte}.pdf")
