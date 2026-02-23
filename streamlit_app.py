@@ -1,8 +1,3 @@
-Aquí tienes el código completo, definitivo y blindado.
-
-He corregido el error del campo 'Tipo', he asegurado que la columna de máquinas se rija por la hoja DATOS, y he mantenido estrictamente el layout original con las métricas en la parte superior, las pestañas de Estampado/Soldadura y los gráficos de barras inferiores.
-
-Python
 import streamlit as st
 import pandas as pd
 import plotly.express as px
