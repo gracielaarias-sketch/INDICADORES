@@ -1,8 +1,4 @@
-Entiendo perfectamente. El error ocurre porque al seleccionar una sola fecha (o filtrar una planta que deja el set de datos vacío), el flujo se interrumpe o las funciones de métricas no encuentran datos que procesar.
 
-Aquí tienes el código con el arreglo de lógica de filtrado integrado, manteniendo intacto el layout y la estructura de tus indicadores:
-
-Python
 import streamlit as st
 import pandas as pd
 import plotly.express as px
