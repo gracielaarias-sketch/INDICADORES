@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -247,7 +248,7 @@ st.divider()
 with st.expander("📂 Registro Completo"): st.dataframe(df_f, use_container_width=True)
 
 # ==========================================
-# 11. EXPORTACIÓN A PDF POR ÁREA (MODIFICADO CON COLORES Y FECHAS)
+# 11. EXPORTACIÓN A PDF POR ÁREA (MODIFICADO CON COLORES, FECHAS, PARADAS Y PRODUCCIÓN)
 # ==========================================
 st.markdown("---")
 st.header("📄 Exportar Reportes PDF")
@@ -385,7 +386,7 @@ def generar_pdf_area(area_nombre, lineas):
             fig_ev.update_layout(yaxis={'categoryorder':'total ascending'})
             
             with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_img2:
-                fig_ev.write_image(tmp_img2.name, format="png", width=700, height=450)
+                fig_ev.write_image(tmp_img2.name, format="png", width=700, height=400)
                 pdf.image(tmp_img2.name, x=10, w=180)
         except Exception:
             pdf.cell(0, 8, "(No se pudo generar el grafico de eventos)", ln=True)
@@ -400,7 +401,56 @@ def generar_pdf_area(area_nombre, lineas):
     if not df_area.empty:
         df_t_op = df_area.groupby('Operador')['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False)
         draw_pdf_table(pdf, df_t_op, [100, 50])
+    pdf.ln(5)
 
+    pdf.add_page() # Pasamos a la hoja 3 para que no se corte
+    
+    # ---------------------------------------------------------
+    # 5. REGISTRO DE PARADAS DETALLADO (Top 15)
+    # ---------------------------------------------------------
+    titulo_seccion("5. Registro de Paradas (Top 15)")
+    if not df_area.empty and 'Tipo' in df_area.columns:
+        # Agrupamos por Evento y Operador
+        df_paradas = df_area[df_area['Tipo'] == 'Parada'].groupby(['Evento', 'Operador'])['Tiempo (Min)'].sum().reset_index()
+        df_paradas = df_paradas.sort_values('Tiempo (Min)', ascending=False).head(15)
+        # Renombramos la columna Operador
+        df_paradas.rename(columns={'Operador': 'Levanto Parada...'}, inplace=True)
+        
+        if not df_paradas.empty:
+            draw_pdf_table(pdf, df_paradas[['Evento', 'Tiempo (Min)', 'Levanto Parada...']], [90, 30, 70], max_rows=15)
+        else:
+            pdf.cell(0, 8, "No hay registros de paradas.", ln=True)
+    else:
+        pdf.cell(0, 8, "No hay datos de paradas para mostrar.", ln=True)
+    pdf.ln(5)
+
+    # ---------------------------------------------------------
+    # 6. PRODUCCIÓN TOTAL POR MÁQUINA
+    # ---------------------------------------------------------
+    titulo_seccion("6. Produccion Total por Maquina")
+    # Filtramos la producción general por el área seleccionada
+    mask_prod = df_prod_f.apply(lambda r: r.astype(str).str.upper().str.contains(area_nombre.upper()).any(), axis=1)
+    df_prod_area = df_prod_f[mask_prod].copy()
+
+    if not df_prod_area.empty:
+        # Detectamos columnas de producción dinámicamente
+        c_maq = next((c for c in df_prod_area.columns if 'máquina' in c.lower() or 'maquina' in c.lower()), None)
+        c_b = next((c for c in df_prod_area.columns if 'buenas' in c.lower()), 'Buenas')
+        c_r = next((c for c in df_prod_area.columns if 'retrabajo' in c.lower()), 'Retrabajo')
+        c_o = next((c for c in df_prod_area.columns if 'observadas' in c.lower()), 'Observadas')
+        
+        if c_maq:
+            cols_to_sum = [c for c in [c_b, c_r, c_o] if c in df_prod_area.columns]
+            df_prod_res = df_prod_area.groupby(c_maq)[cols_to_sum].sum().reset_index()
+            # Anchos automáticos: 70 para la máquina, 40 para el resto
+            widths = [70] + [40] * len(cols_to_sum)
+            draw_pdf_table(pdf, df_prod_res, widths, max_rows=20)
+        else:
+            pdf.cell(0, 8, "No se encontro la columna de maquina en produccion.", ln=True)
+    else:
+        pdf.cell(0, 8, "No hay registros de produccion en este periodo.", ln=True)
+
+    # Generamos finalmente el documento
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
         pdf.output(tmp_pdf.name)
         with open(tmp_pdf.name, "rb") as f:
