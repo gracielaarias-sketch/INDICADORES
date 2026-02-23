@@ -344,4 +344,4 @@ with c1:
 with c2:
     if st.button("🤖 Descargar PDF Soldadura"):
         res = generar_pdf_vfinal("SOLDADURA", dia_reporte)
-        if res: st.download_button(f"Confirmar Soldadura {dia_reporte}", res, f"Reporte_Soldadura_{dia_repor
+        if res: st.download_button(f"Confirmar Soldadura {dia_reporte}", res, f"Reporte_Soldadura_{dia_reporte}.pdf")
