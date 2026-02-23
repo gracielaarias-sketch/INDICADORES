@@ -379,4 +379,4 @@ with c2:
         if res == "VACIO": st.error("No hay datos para Soldadura.")
         else: st.session_state['pdf_sol'] = res
     if 'pdf_sol' in st.session_state:
-        st.download_button("⬇️ Descargar Soldadura", data=st.session_state['pdf_sol'], file
+        st.download_button("⬇️ Descargar Soldadura", data=st.session_state['pdf_sol'], file_name="Soldadura.pdf")
