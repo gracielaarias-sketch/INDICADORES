@@ -73,7 +73,7 @@ def load_data():
 df_raw, df_oee_raw, df_prod_raw, df_operarios_raw = load_data()
 
 # ==========================================
-# 3. FILTROS GLOBALES (CORREGIDO)
+# 3. FILTROS GLOBALES
 # ==========================================
 if df_raw.empty:
     st.warning("No hay datos cargados.")
@@ -86,14 +86,13 @@ rango = st.sidebar.date_input("Periodo", [min_d, max_d], min_value=min_d, max_va
 st.sidebar.divider()
 st.sidebar.header("⚙️ Filtros")
 
-# Corrección Filtros: El default de máquinas ahora respeta lo filtrado en fábricas
 opciones_fabrica = sorted(df_raw['Fábrica'].unique())
 fábricas = st.sidebar.multiselect("Fábrica", opciones_fabrica, default=opciones_fabrica)
 
 opciones_maquina = sorted(df_raw[df_raw['Fábrica'].isin(fábricas)]['Máquina'].unique())
 máquinas_globales = st.sidebar.multiselect("Máquina", options=opciones_maquina, default=opciones_maquina)
 
-# Corrección Fechas: Manejo de clics simples en el calendario
+# Manejo robusto de fechas
 if isinstance(rango, (list, tuple)) and len(rango) == 2:
     ini, fin = pd.to_datetime(rango[0]), pd.to_datetime(rango[1])
 elif isinstance(rango, (list, tuple)) and len(rango) == 1:
@@ -101,7 +100,6 @@ elif isinstance(rango, (list, tuple)) and len(rango) == 1:
 else:
     ini = fin = pd.to_datetime(min_d)
 
-# Aplicar filtros
 df_f = df_raw[(df_raw['Fecha_Filtro'] >= ini) & (df_raw['Fecha_Filtro'] <= fin)]
 df_f = df_f[df_f['Fábrica'].isin(fábricas) & df_f['Máquina'].isin(máquinas_globales)]
 
@@ -198,12 +196,11 @@ with st.expander("☕ Tiempos de Baño y Refrigerio"):
                 st.dataframe(res.sort_values('sum', ascending=False), use_container_width=True)
 
 # ==========================================
-# 8. MÓDULO PRODUCCIÓN (CORREGIDO)
+# 8. MÓDULO PRODUCCIÓN
 # ==========================================
 st.markdown("---")
 st.header("Producción General")
 if not df_prod_f.empty:
-    # Identificar columnas dinámicamente para evitar KeyError
     c_maq = next((c for c in df_prod_f.columns if 'máquina' in c.lower() or 'maquina' in c.lower()), None)
     c_cod = next((c for c in df_prod_f.columns if 'código' in c.lower() or 'codigo' in c.lower()), None)
     c_b = next((c for c in df_prod_f.columns if 'buenas' in c.lower()), 'Buenas')
@@ -211,20 +208,13 @@ if not df_prod_f.empty:
     c_o = next((c for c in df_prod_f.columns if 'observadas' in c.lower()), 'Observadas')
 
     if c_maq:
-        # Gráfico
         df_st = df_prod_f.groupby(c_maq)[[c_b, c_r, c_o]].sum().reset_index()
         st.plotly_chart(px.bar(df_st, x=c_maq, y=[c_b, c_r, c_o], title="Balance Producción", barmode='stack'), use_container_width=True)
     
-        # Tabla Detallada
         with st.expander("📂 Tablas Detalladas por Código, Máquina y Fecha"):
-            # Creamos la columna de Fecha en texto para agrupar
             df_prod_f['Fecha_Str'] = df_prod_f['Fecha_Filtro'].dt.strftime('%d-%m-%Y')
-            
-            # Agrupar solo con las columnas que existan
             cols_group = [col for col in [c_cod, c_maq, 'Fecha_Str'] if col is not None]
             df_tab = df_prod_f.groupby(cols_group)[[c_b, c_r, c_o]].sum().reset_index()
-            
-            # Ordenar
             sort_cols = [c for c in [c_cod, 'Fecha_Str'] if c in df_tab.columns]
             st.dataframe(df_tab.sort_values(sort_cols, ascending=[True, False]), use_container_width=True, hide_index=True)
 
@@ -255,3 +245,163 @@ if not df_fallas.empty:
 
 st.divider()
 with st.expander("📂 Registro Completo"): st.dataframe(df_f, use_container_width=True)
+
+
+# ==========================================
+# 11. EXPORTACIÓN A PDF POR ÁREA
+# ==========================================
+st.markdown("---")
+st.header("📄 Exportar Reportes PDF")
+
+try:
+    from fpdf import FPDF
+    import tempfile
+    import os
+except ImportError:
+    st.warning("⚠️ Faltan librerías para exportar. Asegúrate de tener 'fpdf2' y 'kaleido' en tu requirements.txt.")
+
+# Función para limpiar texto y evitar errores de caracteres en FPDF
+def clean_text(text):
+    return str(text).encode('latin-1', 'replace').decode('latin-1')
+
+# Función auxiliar para dibujar tablas en el PDF
+def draw_pdf_table(pdf, df, col_widths, max_rows=10):
+    if df.empty:
+        pdf.set_font("Arial", 'I', 10)
+        pdf.cell(0, 8, "No hay datos para mostrar en este periodo.", ln=True)
+        return
+
+    # Encabezados
+    pdf.set_font("Arial", 'B', 9)
+    for col, width in zip(df.columns, col_widths):
+        pdf.cell(width, 8, clean_text(col)[:25], border=1, align='C')
+    pdf.ln()
+    
+    # Filas
+    pdf.set_font("Arial", '', 9)
+    for _, row in df.head(max_rows).iterrows():
+        for item, width in zip(row, col_widths):
+            val = clean_text(item)
+            if isinstance(item, float): val = f"{item:.2f}"
+            pdf.cell(width, 8, val[:25], border=1, align='C')
+        pdf.ln()
+
+def generar_pdf_area(area_nombre, lineas):
+    if "FPDF" not in globals(): return None
+    
+    pdf = FPDF()
+    pdf.add_page()
+    
+    # TÍTULO
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(0, 10, f"Reporte de Indicadores - {area_nombre.upper()}", ln=True, align='C')
+    pdf.ln(5)
+    
+    # 1. OEE Y OEE POR MÁQUINA
+    m_gen = get_metrics(area_nombre)
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 10, "1. OEE General y por Maquina", ln=True)
+    pdf.set_font("Arial", '', 11)
+    pdf.cell(0, 8, f"OEE Global: {m_gen['OEE']*100:.1f}% (Disp: {m_gen['DISP']*100:.0f}%, Perf: {m_gen['PERF']*100:.0f}%, Cal: {m_gen['CAL']*100:.0f}%)", ln=True)
+    
+    for linea in lineas:
+        ml = get_metrics(linea)
+        pdf.cell(0, 8, f"   - {linea}: OEE {ml['OEE']*100:.1f}%", ln=True)
+    pdf.ln(5)
+
+    mask_f = df_f.apply(lambda r: r.astype(str).str.upper().str.contains(area_nombre.upper()).any(), axis=1)
+    df_area = df_f[mask_f].copy()
+    
+    mask_op = df_op_f.apply(lambda r: r.astype(str).str.upper().str.contains(area_nombre.upper()).any(), axis=1)
+    df_op_area = df_op_f[mask_op].copy()
+
+    # 2. PERFORMANCE POR OPERARIO
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 10, "2. Performance Promedio por Operador", ln=True)
+    if not df_op_area.empty:
+        col_op = next((c for c in df_op_area.columns if 'operador' in c.lower() or 'nombre' in c.lower()), 'Operador')
+        df_perf = df_op_area.groupby(col_op)['Performance'].mean().reset_index().sort_values('Performance', ascending=False)
+        df_perf['Performance'] = df_perf['Performance'].apply(lambda x: f"{x:.1f}%" if x > 1.5 else f"{x*100:.1f}%")
+        draw_pdf_table(pdf, df_perf, [100, 50])
+    else:
+        pdf.cell(0, 8, "Sin registros.", ln=True)
+    pdf.ln(5)
+
+    # 3. TIEMPOS POR OPERADOR
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 10, "3. Tiempos Totales por Operador (Min)", ln=True)
+    if not df_area.empty:
+        df_t_op = df_area.groupby('Operador')['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False)
+        draw_pdf_table(pdf, df_t_op, [100, 50])
+    pdf.ln(5)
+
+    # 4. TOP EVENTOS
+    pdf.add_page()
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 10, "4. Top Eventos (Produccion y Paradas)", ln=True)
+    if not df_area.empty and 'Tipo' in df_area.columns:
+        df_ev = df_area.groupby(['Tipo', 'Evento'])['Tiempo (Min)'].sum().reset_index()
+        
+        pdf.set_font("Arial", 'B', 10)
+        pdf.cell(0, 8, "Top 5 Produccion:", ln=True)
+        df_prod = df_ev[df_ev['Tipo'] == 'Producción'].sort_values('Tiempo (Min)', ascending=False)
+        draw_pdf_table(pdf, df_prod[['Evento', 'Tiempo (Min)']], [130, 40], max_rows=5)
+        pdf.ln(3)
+        
+        pdf.set_font("Arial", 'B', 10)
+        pdf.cell(0, 8, "Top 5 Paradas:", ln=True)
+        df_par = df_ev[df_ev['Tipo'] == 'Parada'].sort_values('Tiempo (Min)', ascending=False)
+        draw_pdf_table(pdf, df_par[['Evento', 'Tiempo (Min)']], [130, 40], max_rows=5)
+    pdf.ln(5)
+
+    # 5. TOP FALLAS Y GRÁFICO
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 10, "5. Top 10 Fallas", ln=True)
+    df_fallas_area = df_area[df_area['Nivel Evento 3'].astype(str).str.contains('FALLA', case=False)]
+    
+    if not df_fallas_area.empty:
+        top_fallas = df_fallas_area.groupby('Nivel Evento 6')['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False).head(10)
+        draw_pdf_table(pdf, top_fallas, [130, 40], max_rows=10)
+        
+        try:
+            fig = px.bar(top_fallas, x='Tiempo (Min)', y='Nivel Evento 6', orientation='h', title=f"Top Fallas")
+            fig.update_layout(yaxis={'categoryorder':'total ascending'})
+            
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_img:
+                fig.write_image(tmp_img.name, format="png", width=700, height=400)
+                pdf.ln(5)
+                pdf.image(tmp_img.name, x=10, w=180)
+        except Exception:
+            pdf.cell(0, 8, "(No se pudo generar el grafico)", ln=True)
+    else:
+        pdf.set_font("Arial", '', 10)
+        pdf.cell(0, 8, "No se registraron fallas.", ln=True)
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
+        pdf.output(tmp_pdf.name)
+        with open(tmp_pdf.name, "rb") as f:
+            return f.read()
+
+# Interfaz de botones
+if "FPDF" in globals():
+    c1, c2 = st.columns(2)
+
+    with c1:
+        if st.button("🏗️ Preparar PDF - ESTAMPADO", use_container_width=True):
+            with st.spinner("Compilando reporte de Estampado..."):
+                pdf_bytes = generar_pdf_area("ESTAMPADO", ['L1', 'L2', 'L3', 'L4'])
+                if pdf_bytes:
+                    st.session_state['pdf_est'] = pdf_bytes
+
+        if 'pdf_est' in st.session_state:
+            st.download_button("⬇️ Descargar PDF Estampado", data=st.session_state['pdf_est'], file_name="Reporte_Estampado.pdf", mime="application/pdf", use_container_width=True)
+
+    with c2:
+        if st.button("🤖 Preparar PDF - SOLDADURA", use_container_width=True):
+            with st.spinner("Compilando reporte de Soldadura..."):
+                pdf_bytes = generar_pdf_area("SOLDADURA", ['CELDA', 'PRP'])
+                if pdf_bytes:
+                    st.session_state['pdf_sol'] = pdf_bytes
+
+        if 'pdf_sol' in st.session_state:
+            st.download_button("⬇️ Descargar PDF Soldadura", data=st.session_state['pdf_sol'], file_name="Reporte_Soldadura.pdf", mime="application/pdf", use_container_width=True)
