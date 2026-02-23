@@ -21,10 +21,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. CARGA DE DATOS (VERSIÓN DE DIAGNÓSTICO)
+# 2. CARGA DE DATOS ROBUSTA
 # ==========================================
-# Quitamos el caché temporalmente para asegurarnos de que siempre lea el error en vivo
-@st.cache_data(ttl=0) 
+@st.cache_data(ttl=300)
 def load_data():
     try:
         try:
@@ -36,13 +35,10 @@ def load_data():
         gid_datos, gid_oee, gid_prod, gid_operarios = "0", "1767654796", "315437448", "354131379"
         base_export = url_base.split("/edit")[0] + "/export?format=csv&gid="
         
-        def process_df(url, nombre_tabla):
+        def process_df(url):
             try:
                 df = pd.read_csv(url)
-                st.success(f"✅ {nombre_tabla} descargado con éxito. Filas iniciales: {len(df)}")
-            except Exception as e:
-                st.error(f"❌ Error al descargar {nombre_tabla}: {e}")
-                return pd.DataFrame()
+            except Exception: return pd.DataFrame()
             
             # Limpieza Numérica
             cols_num = ['Tiempo (Min)', 'Buenas', 'Retrabajo', 'Observadas', 'OEE', 'Disponibilidad', 'Performance', 'Calidad', 'Eficiencia']
@@ -53,23 +49,12 @@ def load_data():
                     df[match] = df[match].str.replace('%', '')
                     df[match] = pd.to_numeric(df[match], errors='coerce').fillna(0.0)
             
-            # Limpieza Fechas (AQUÍ SUELE ESTAR EL PROBLEMA)
+            # Limpieza Fechas
             col_fecha = next((c for c in df.columns if 'fecha' in c.lower()), None)
             if col_fecha:
                 df['Fecha_DT'] = pd.to_datetime(df[col_fecha], dayfirst=True, errors='coerce')
                 df['Fecha_Filtro'] = df['Fecha_DT'].dt.normalize()
-                
-                # Verificamos cuántas filas sobreviven al filtro de fecha
-                filas_antes = len(df)
                 df = df.dropna(subset=['Fecha_Filtro'])
-                filas_despues = len(df)
-                
-                if filas_despues == 0 and filas_antes > 0:
-                    st.error(f"⚠️ ¡Alerta en {nombre_tabla}! Se perdieron todas las {filas_antes} filas al limpiar la fecha. Revisa que la columna '{col_fecha}' tenga un formato válido de fecha y no texto roto.")
-                elif filas_despues < filas_antes:
-                    st.warning(f"⚠️ Atención en {nombre_tabla}: Se eliminaron {filas_antes - filas_despues} filas porque no tenían una fecha válida.")
-            else:
-                st.warning(f"⚠️ No se encontró ninguna columna con la palabra 'fecha' en {nombre_tabla}.")
             
             # Limpieza Textos
             cols_texto = ['Fábrica', 'Máquina', 'Evento', 'Código', 'Operador', 'Nivel Evento 3', 'Nivel Evento 4', 'Nivel Evento 6', 'Nombre']
@@ -79,14 +64,10 @@ def load_data():
                     df[match] = df[match].fillna('').astype(str)
             return df
 
-        st.info("🔍 Iniciando diagnóstico de carga de datos...")
-        return process_df(base_export + gid_datos, "DATOS"), \
-               process_df(base_export + gid_oee, "OEE"), \
-               process_df(base_export + gid_prod, "PRODUCCIÓN"), \
-               process_df(base_export + gid_operarios, "OPERARIOS")
-               
+        return process_df(base_export + gid_datos), process_df(base_export + gid_oee), \
+               process_df(base_export + gid_prod), process_df(base_export + gid_operarios)
     except Exception as e:
-        st.error(f"❌ Error fatal en la carga general: {e}")
+        st.error(f"Error: {e}")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
 df_raw, df_oee_raw, df_prod_raw, df_operarios_raw = load_data()
@@ -95,7 +76,7 @@ df_raw, df_oee_raw, df_prod_raw, df_operarios_raw = load_data()
 # 3. FILTROS GLOBALES
 # ==========================================
 if df_raw.empty:
-    st.warning("🛑 La aplicación se detuvo porque no hay datos válidos en la pestaña principal (DATOS). Revisa los mensajes de arriba.")
+    st.warning("No hay datos cargados.")
     st.stop()
 
 st.sidebar.header("📅 Rango de tiempo")
