@@ -1,5 +1,6 @@
 streamlit
 pandas
 plotly
-st-gsheets-connection
-pip install fpdf kaleido
+fpdf2
+kaleido==0.2.1
+
