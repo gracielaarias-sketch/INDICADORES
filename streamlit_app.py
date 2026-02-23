@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -248,7 +247,7 @@ st.divider()
 with st.expander("📂 Registro Completo"): st.dataframe(df_f, use_container_width=True)
 
 # ==========================================
-# 11. EXPORTACIÓN A PDF POR ÁREA (MODIFICADO CON COLORES, FECHAS, PARADAS Y PRODUCCIÓN)
+# 11. EXPORTACIÓN A PDF POR ÁREA
 # ==========================================
 st.markdown("---")
 st.header("📄 Exportar Reportes PDF")
@@ -329,7 +328,6 @@ def generar_pdf_area(area_nombre, lineas):
     titulo_seccion("1. KPIs Generales y por Maquina")
     
     m_gen = get_metrics(area_nombre)
-    # Fila global resaltada
     pdf.set_fill_color(214, 234, 248) # Fondo azul muy suave
     pdf.set_font("Arial", 'B', 11)
     pdf.set_text_color(0, 0, 0)
@@ -341,23 +339,30 @@ def generar_pdf_area(area_nombre, lineas):
         pdf.cell(0, 8, f"   - {linea}: OEE {ml['OEE']*100:.1f}% (Disp: {ml['DISP']*100:.0f}%  /  Perf: {ml['PERF']*100:.0f}%  /  Cal: {ml['CAL']*100:.0f}%)", ln=True)
     pdf.ln(5)
 
-    # Filtrar DataFrames para el área específica
     mask_f = df_f.apply(lambda r: r.astype(str).str.upper().str.contains(area_nombre.upper()).any(), axis=1)
     df_area = df_f[mask_f].copy()
 
     # ---------------------------------------------------------
-    # 2. TOP FALLAS Y GRÁFICO 
+    # 2. TOP FALLAS Y GRÁFICO (CON OPERADOR)
     # ---------------------------------------------------------
     titulo_seccion("2. Top 10 Fallas (Tiempo y Frecuencia)")
     df_fallas_area = df_area[df_area['Nivel Evento 3'].astype(str).str.contains('FALLA', case=False)]
     
     if not df_fallas_area.empty:
-        top_fallas = df_fallas_area.groupby('Nivel Evento 6')['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False).head(10)
-        draw_pdf_table(pdf, top_fallas, [130, 40], max_rows=10)
+        # Agrupamos por Falla y por Operador
+        top_fallas = df_fallas_area.groupby(['Nivel Evento 6', 'Operador'])['Tiempo (Min)'].sum().reset_index()
+        top_fallas = top_fallas.sort_values('Tiempo (Min)', ascending=False).head(10)
+        
+        # Renombrar Operador a "Levanto Parada..." y ordenar columnas
+        top_fallas.rename(columns={'Operador': 'Levanto Parada...'}, inplace=True)
+        cols_tabla = ['Nivel Evento 6', 'Tiempo (Min)', 'Levanto Parada...']
+        
+        draw_pdf_table(pdf, top_fallas[cols_tabla], [90, 30, 70], max_rows=10)
         
         try:
-            # Gráfico de fallas a color
-            fig = px.bar(top_fallas, x='Tiempo (Min)', y='Nivel Evento 6', orientation='h', title=f"Top Fallas", color='Tiempo (Min)', color_continuous_scale='Reds')
+            # Gráfico de fallas (se agrupa solo por Falla para que el gráfico quede limpio)
+            fig_fallas = df_fallas_area.groupby('Nivel Evento 6')['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False).head(10)
+            fig = px.bar(fig_fallas, x='Tiempo (Min)', y='Nivel Evento 6', orientation='h', title=f"Top Fallas", color='Tiempo (Min)', color_continuous_scale='Reds')
             fig.update_layout(yaxis={'categoryorder':'total ascending'}, coloraxis_showscale=False)
             
             with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_img:
@@ -380,7 +385,6 @@ def generar_pdf_area(area_nombre, lineas):
         df_ev_top = df_ev.sort_values('Tiempo (Min)', ascending=False).head(15) 
         
         try:
-            # Colores: Produccion en Verde, Parada en Rojo
             colores = {'Producción': '#2ecc71', 'Parada': '#e74c3c'}
             fig_ev = px.bar(df_ev_top, x='Tiempo (Min)', y='Evento', color='Tipo', orientation='h', title="Top 15 Eventos Totales", color_discrete_map=colores)
             fig_ev.update_layout(yaxis={'categoryorder':'total ascending'})
@@ -403,17 +407,15 @@ def generar_pdf_area(area_nombre, lineas):
         draw_pdf_table(pdf, df_t_op, [100, 50])
     pdf.ln(5)
 
-    pdf.add_page() # Pasamos a la hoja 3 para que no se corte
+    pdf.add_page() # Pasamos a la hoja 3
     
     # ---------------------------------------------------------
     # 5. REGISTRO DE PARADAS DETALLADO (Top 15)
     # ---------------------------------------------------------
     titulo_seccion("5. Registro de Paradas (Top 15)")
     if not df_area.empty and 'Tipo' in df_area.columns:
-        # Agrupamos por Evento y Operador
         df_paradas = df_area[df_area['Tipo'] == 'Parada'].groupby(['Evento', 'Operador'])['Tiempo (Min)'].sum().reset_index()
         df_paradas = df_paradas.sort_values('Tiempo (Min)', ascending=False).head(15)
-        # Renombramos la columna Operador
         df_paradas.rename(columns={'Operador': 'Levanto Parada...'}, inplace=True)
         
         if not df_paradas.empty:
@@ -425,32 +427,45 @@ def generar_pdf_area(area_nombre, lineas):
     pdf.ln(5)
 
     # ---------------------------------------------------------
-    # 6. PRODUCCIÓN TOTAL POR MÁQUINA
+    # 6. PRODUCCIÓN TOTAL POR MÁQUINA Y CÓDIGO
     # ---------------------------------------------------------
-    titulo_seccion("6. Produccion Total por Maquina")
-    # Filtramos la producción general por el área seleccionada
+    titulo_seccion("6. Produccion Total por Maquina y Codigo")
     mask_prod = df_prod_f.apply(lambda r: r.astype(str).str.upper().str.contains(area_nombre.upper()).any(), axis=1)
     df_prod_area = df_prod_f[mask_prod].copy()
 
     if not df_prod_area.empty:
-        # Detectamos columnas de producción dinámicamente
         c_maq = next((c for c in df_prod_area.columns if 'máquina' in c.lower() or 'maquina' in c.lower()), None)
+        c_cod = next((c for c in df_prod_area.columns if 'código' in c.lower() or 'codigo' in c.lower()), None)
         c_b = next((c for c in df_prod_area.columns if 'buenas' in c.lower()), 'Buenas')
         c_r = next((c for c in df_prod_area.columns if 'retrabajo' in c.lower()), 'Retrabajo')
         c_o = next((c for c in df_prod_area.columns if 'observadas' in c.lower()), 'Observadas')
         
-        if c_maq:
+        if c_maq and c_cod:
+            # Seleccionar las columnas numéricas que existan
             cols_to_sum = [c for c in [c_b, c_r, c_o] if c in df_prod_area.columns]
-            df_prod_res = df_prod_area.groupby(c_maq)[cols_to_sum].sum().reset_index()
-            # Anchos automáticos: 70 para la máquina, 40 para el resto
-            widths = [70] + [40] * len(cols_to_sum)
-            draw_pdf_table(pdf, df_prod_res, widths, max_rows=20)
+            
+            # Agrupar por Máquina y por Código
+            df_prod_res = df_prod_area.groupby([c_maq, c_cod])[cols_to_sum].sum().reset_index()
+            
+            # Renombrar columnas al formato solicitado
+            renames = {c_cod: 'Cod. Prod.', c_b: 'Linea OK'}
+            df_prod_res.rename(columns=renames, inplace=True)
+            
+            # Orden de las columnas finales
+            final_cols = [c_maq, 'Cod. Prod.', 'Linea OK']
+            if c_r in df_prod_res.columns: final_cols.append(c_r)
+            if c_o in df_prod_res.columns: final_cols.append(c_o)
+            
+            df_prod_res = df_prod_res[final_cols]
+            
+            # Anchos adaptados (50 para Maquina, 40 para Código, 30 para los números)
+            widths = [50, 45] + [30] * (len(final_cols) - 2)
+            draw_pdf_table(pdf, df_prod_res, widths, max_rows=25)
         else:
-            pdf.cell(0, 8, "No se encontro la columna de maquina en produccion.", ln=True)
+            pdf.cell(0, 8, "No se encontro la columna de maquina o codigo.", ln=True)
     else:
         pdf.cell(0, 8, "No hay registros de produccion en este periodo.", ln=True)
 
-    # Generamos finalmente el documento
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
         pdf.output(tmp_pdf.name)
         with open(tmp_pdf.name, "rb") as f:
