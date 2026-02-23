@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.express as px
 
 # ==========================================
-# 1. CONFIGURACIÓN Y ESTILOS (Sin cambios)
+# 1. CONFIGURACIÓN Y ESTILOS
 # ==========================================
 st.set_page_config(
     page_title="Indicadores FAMMA", 
@@ -21,7 +21,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. CARGA DE DATOS (Sin cambios)
+# 2. CARGA DE DATOS ROBUSTA
 # ==========================================
 @st.cache_data(ttl=300)
 def load_data():
@@ -40,6 +40,7 @@ def load_data():
                 df = pd.read_csv(url)
             except Exception: return pd.DataFrame()
             
+            # Limpieza Numérica
             cols_num = ['Tiempo (Min)', 'Buenas', 'Retrabajo', 'Observadas', 'OEE', 'Disponibilidad', 'Performance', 'Calidad', 'Eficiencia']
             for c in cols_num:
                 matches = [col for col in df.columns if c.lower() in col.lower()]
@@ -48,12 +49,14 @@ def load_data():
                     df[match] = df[match].str.replace('%', '')
                     df[match] = pd.to_numeric(df[match], errors='coerce').fillna(0.0)
             
+            # Limpieza Fechas
             col_fecha = next((c for c in df.columns if 'fecha' in c.lower()), None)
             if col_fecha:
                 df['Fecha_DT'] = pd.to_datetime(df[col_fecha], dayfirst=True, errors='coerce')
                 df['Fecha_Filtro'] = df['Fecha_DT'].dt.normalize()
                 df = df.dropna(subset=['Fecha_Filtro'])
             
+            # Limpieza Textos
             cols_texto = ['Fábrica', 'Máquina', 'Evento', 'Código', 'Operador', 'Nivel Evento 3', 'Nivel Evento 4', 'Nivel Evento 6', 'Nombre']
             for c_txt in cols_texto:
                 matches = [col for col in df.columns if c_txt.lower() in col.lower()]
@@ -70,7 +73,7 @@ def load_data():
 df_raw, df_oee_raw, df_prod_raw, df_operarios_raw = load_data()
 
 # ==========================================
-# 3. FILTROS GLOBALES (ARREGLO AQUÍ)
+# 3. FILTROS GLOBALES (CORREGIDO)
 # ==========================================
 if df_raw.empty:
     st.warning("No hay datos cargados.")
@@ -82,10 +85,15 @@ rango = st.sidebar.date_input("Periodo", [min_d, max_d], min_value=min_d, max_va
 
 st.sidebar.divider()
 st.sidebar.header("⚙️ Filtros")
-fábricas = st.sidebar.multiselect("Fábrica", sorted(df_raw['Fábrica'].unique()), default=sorted(df_raw['Fábrica'].unique()))
-máquinas_globales = st.sidebar.multiselect("Máquina", sorted(df_raw[df_raw['Fábrica'].isin(fábricas)]['Máquina'].unique()), default=sorted(df_raw['Máquina'].unique()))
 
-# Lógica robusta para el rango de fechas
+# Corrección Filtros: El default de máquinas ahora respeta lo filtrado en fábricas
+opciones_fabrica = sorted(df_raw['Fábrica'].unique())
+fábricas = st.sidebar.multiselect("Fábrica", opciones_fabrica, default=opciones_fabrica)
+
+opciones_maquina = sorted(df_raw[df_raw['Fábrica'].isin(fábricas)]['Máquina'].unique())
+máquinas_globales = st.sidebar.multiselect("Máquina", options=opciones_maquina, default=opciones_maquina)
+
+# Corrección Fechas: Manejo de clics simples en el calendario
 if isinstance(rango, (list, tuple)) and len(rango) == 2:
     ini, fin = pd.to_datetime(rango[0]), pd.to_datetime(rango[1])
 elif isinstance(rango, (list, tuple)) and len(rango) == 1:
@@ -93,7 +101,7 @@ elif isinstance(rango, (list, tuple)) and len(rango) == 1:
 else:
     ini = fin = pd.to_datetime(min_d)
 
-# Aplicación de filtros
+# Aplicar filtros
 df_f = df_raw[(df_raw['Fecha_Filtro'] >= ini) & (df_raw['Fecha_Filtro'] <= fin)]
 df_f = df_f[df_f['Fábrica'].isin(fábricas) & df_f['Máquina'].isin(máquinas_globales)]
 
@@ -102,7 +110,7 @@ df_prod_f = df_prod_raw[(df_prod_raw['Fecha_Filtro'] >= ini) & (df_prod_raw['Fec
 df_op_f = df_operarios_raw[(df_operarios_raw['Fecha_Filtro'] >= ini) & (df_operarios_raw['Fecha_Filtro'] <= fin)] if not df_operarios_raw.empty else pd.DataFrame()
 
 # ==========================================
-# 4. FUNCIONES KPI (Sin cambios)
+# 4. FUNCIONES KPI
 # ==========================================
 def get_metrics(name_filter):
     m = {'OEE': 0.0, 'DISP': 0.0, 'PERF': 0.0, 'CAL': 0.0}
@@ -138,7 +146,7 @@ def show_historical_oee(filter_name, title):
             st.plotly_chart(px.line(trend, x='Fecha_Filtro', y='OEE_Num', markers=True, title=f'OEE: {title}'), use_container_width=True)
 
 # ==========================================
-# 5. DASHBOARD Y PESTAÑAS (Layout Intacto)
+# 5. DASHBOARD Y PESTAÑAS (OEE)
 # ==========================================
 st.title("🏭 INDICADORES FAMMA")
 show_metric_row(get_metrics('GENERAL'))
@@ -190,11 +198,12 @@ with st.expander("☕ Tiempos de Baño y Refrigerio"):
                 st.dataframe(res.sort_values('sum', ascending=False), use_container_width=True)
 
 # ==========================================
-# 8. MÓDULO PRODUCCIÓN
+# 8. MÓDULO PRODUCCIÓN (CORREGIDO)
 # ==========================================
 st.markdown("---")
 st.header("Producción General")
 if not df_prod_f.empty:
+    # Identificar columnas dinámicamente para evitar KeyError
     c_maq = next((c for c in df_prod_f.columns if 'máquina' in c.lower() or 'maquina' in c.lower()), None)
     c_cod = next((c for c in df_prod_f.columns if 'código' in c.lower() or 'codigo' in c.lower()), None)
     c_b = next((c for c in df_prod_f.columns if 'buenas' in c.lower()), 'Buenas')
@@ -202,13 +211,20 @@ if not df_prod_f.empty:
     c_o = next((c for c in df_prod_f.columns if 'observadas' in c.lower()), 'Observadas')
 
     if c_maq:
+        # Gráfico
         df_st = df_prod_f.groupby(c_maq)[[c_b, c_r, c_o]].sum().reset_index()
         st.plotly_chart(px.bar(df_st, x=c_maq, y=[c_b, c_r, c_o], title="Balance Producción", barmode='stack'), use_container_width=True)
     
+        # Tabla Detallada
         with st.expander("📂 Tablas Detalladas por Código, Máquina y Fecha"):
+            # Creamos la columna de Fecha en texto para agrupar
             df_prod_f['Fecha_Str'] = df_prod_f['Fecha_Filtro'].dt.strftime('%d-%m-%Y')
+            
+            # Agrupar solo con las columnas que existan
             cols_group = [col for col in [c_cod, c_maq, 'Fecha_Str'] if col is not None]
             df_tab = df_prod_f.groupby(cols_group)[[c_b, c_r, c_o]].sum().reset_index()
+            
+            # Ordenar
             sort_cols = [c for c in [c_cod, 'Fecha_Str'] if c in df_tab.columns]
             st.dataframe(df_tab.sort_values(sort_cols, ascending=[True, False]), use_container_width=True, hide_index=True)
 
