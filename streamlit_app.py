@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -239,4 +238,4 @@ if not df_fallas.empty:
     st.plotly_chart(fig, use_container_width=True)
 
 st.divider()
-with st.expander("📂 Registro Completo"): st.dataframe(df_f, use_container_width=
+with st.expander("📂 Registro Completo"): st.dataframe(df_f, use_container_width=True)
