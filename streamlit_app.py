@@ -31,7 +31,13 @@ st.markdown("""
 def load_data():
     try:
         url_base = st.secrets["connections"]["gsheets"]["spreadsheet"].strip()
-        gid_map = {"datos": "0", "oee": "1767654796", "prod": "315437448", "operarios": "354131379"}
+        # IDs de las pestañas (GID)
+        gid_map = {
+            "datos": "0", 
+            "oee": "1767654796", 
+            "prod": "315437448", 
+            "operarios": "354131379"
+        }
         base_export = url_base.split("/edit")[0] + "/export?format=csv&gid="
         
         def process_df(url):
@@ -60,8 +66,13 @@ def load_data():
                 return df
             except: return pd.DataFrame()
 
-        return process_df(base_export + gid_map["datos"]), process_df(base_export + gid_oee), \
-               process_df(base_export + gid_map["prod"]), process_df(base_export + gid_map["operarios"])
+        # FIX: Se corrigió la referencia a gid_map para evitar el error de variable no definida
+        return (
+            process_df(base_export + gid_map["datos"]), 
+            process_df(base_export + gid_map["oee"]), 
+            process_df(base_export + gid_map["prod"]), 
+            process_df(base_export + gid_map["operarios"])
+        )
     except Exception as e:
         st.error(f"Error de conexión: {e}")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
@@ -72,7 +83,7 @@ df_raw, df_oee_raw, df_prod_raw, df_operarios_raw = load_data()
 # 3. FILTROS Y PREPARACIÓN MAESTRA
 # ==========================================
 if df_raw.empty:
-    st.warning("Esperando datos de origen...")
+    st.warning("Esperando datos de origen... Verifica la conexión con Google Sheets.")
     st.stop()
 
 # Identificación de columnas en hoja DATOS
@@ -109,16 +120,19 @@ def get_metrics_list(machines_list):
             actual_col = next((c for c in datos.columns if col_search.lower() in c.lower()), None)
             if actual_col:
                 v = pd.to_numeric(datos[actual_col], errors='coerce').mean()
+                # Ajuste de escala si los datos vienen en 0-1 o 0-100
                 m[key] = float(v/100 if v > 1.1 else v)
     return m
 
 def show_metric_row(m):
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("OEE", f"{m['OEE']:.1%}"); c2.metric("Disponibilidad", f"{m['DISP']:.1%}")
-    c3.metric("Performance", f"{m['PERF']:.1%}"); c4.metric("Calidad", f"{m['CAL']:.1%}")
+    c1.metric("OEE", f"{m['OEE']:.1%}")
+    c2.metric("Disponibilidad", f"{m['DISP']:.1%}")
+    c3.metric("Performance", f"{m['PERF']:.1%}")
+    c4.metric("Calidad", f"{m['CAL']:.1%}")
 
 # ==========================================
-# 5. DASHBOARD VISUAL (LAYOUT ORIGINAL)
+# 5. DASHBOARD VISUAL
 # ==========================================
 st.title("🏭 INDICADORES FAMMA")
 show_metric_row(get_metrics_list(['GENERAL']))
@@ -147,20 +161,19 @@ with col_g2:
     st.subheader("⚠️ Análisis de Fallas")
     df_f_filt = df_f[df_f['Nivel Evento 3'].str.contains('FALLA', case=False)]
     if not df_f_filt.empty:
-        # Gráfico Top 15
         st.plotly_chart(px.bar(df_f_filt.groupby('Nivel Evento 6')['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False).head(15), x='Tiempo (Min)', y='Nivel Evento 6', orientation='h', color_discrete_sequence=['#e74c3c']), use_container_width=True)
         
-        # TABLAS DE FALLAS POR MÁQUINA (LAYOUT SOLICITADO)
+        # Tablas detalladas en Dashboard
         st.markdown("### 📋 Desglose de Fallas por Máquina")
         for maq in sorted(df_f_filt[c_maq_datos].unique()):
-            with st.expander(f"Detalle de Fallas - {maq}"):
+            with st.expander(f"Fallas en {maq}"):
                 df_maq_f = df_f_filt[df_f_filt[c_maq_datos] == maq]
                 res_maq = df_maq_f.groupby(['Nivel Evento 6', 'Operador'])['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False)
-                res_maq.columns = ['Falla Detectada', 'Levanto Parada (Operador)', 'Minutos Totales']
+                res_maq.columns = ['Falla', 'Levanto Parada (Operador)', 'Minutos Totales']
                 st.table(res_maq)
 
 # ==========================================
-# 11. MÓDULO PDF PROFESIONAL
+# 11. MÓDULO PDF (CON FILTRO PLANTA)
 # ==========================================
 st.markdown("---")
 st.header("📄 Exportar Reportes PDF")
@@ -192,23 +205,23 @@ def generar_pdf_area(area_nombre):
     pdf.cell(0, 8, f"Periodo: {ini.strftime('%d/%m/%Y')} al {fin.strftime('%d/%m/%Y')}", ln=True, align='C')
     pdf.ln(5)
 
-    # 1. FILTRADO POR COLUMNA 'PLANTA' (Hoja DATOS)
+    # FILTRADO POR COLUMNA 'PLANTA' (Hoja DATOS)
     df_area = df_f[df_f[c_planta_datos].str.upper() == area_nombre.upper()].copy()
     if df_area.empty: return "VACIO"
     list_maquinas = sorted(df_area[c_maq_datos].unique())
 
-    # 2. KPIs
-    pdf.set_text_color(41, 128, 185); pdf.set_font("Arial", 'B', 12); pdf.cell(0, 10, "1. Resumen KPIs", ln=True)
+    # 1. KPIs
+    pdf.set_text_color(41, 128, 185); pdf.set_font("Arial", 'B', 12); pdf.cell(0, 10, "1. KPIs del Area", ln=True)
     m_gen = get_metrics_list([area_nombre])
     pdf.set_fill_color(214, 234, 248); pdf.set_font("Arial", 'B', 11); pdf.set_text_color(0, 0, 0)
     pdf.cell(0, 8, f" GLOBAL: OEE {m_gen['OEE']:.1%} | D: {m_gen['DISP']:.1%} | P: {m_gen['PERF']:.1%} | C: {m_gen['CAL']:.1%}", ln=True, fill=True)
     pdf.ln(5)
 
-    # 3. TOP 10 FALLAS GLOBAL (SIN OPERADOR - ELIMINADO LEVANTO PARADA)
+    # 2. TOP 10 FALLAS (SIN OPERADOR)
     pdf.set_text_color(41, 128, 185); pdf.set_font("Arial", 'B', 12); pdf.cell(0, 10, "2. Top 10 Fallas del Area (Resumen)", ln=True)
     df_fallas_pdf = df_area[df_area['Nivel Evento 3'].str.contains('FALLA', case=False)]
     if not df_fallas_pdf.empty:
-        # Agrupamos solo por Falla (Nivel 6) para el Top 10 Global
+        # Aquí agrupamos solo por Falla
         top_f_global = df_fallas_pdf.groupby('Nivel Evento 6')['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False).head(10)
         draw_pdf_table(pdf, top_f_global, [140, 50])
         
@@ -217,7 +230,7 @@ def generar_pdf_area(area_nombre):
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
             fig_f.write_image(tmp.name); pdf.ln(3); pdf.image(tmp.name, x=10, w=180)
 
-    # 4. TABLAS DE FALLAS POR MÁQUINA (CON OPERADOR / LEVANTO PARADA)
+    # 3. DETALLE DE FALLAS POR MÁQUINA (CON "LEVANTO PARADA")
     pdf.add_page()
     pdf.set_text_color(41, 128, 185); pdf.set_font("Arial", 'B', 12); pdf.cell(0, 10, "3. Detalle de Fallas por Maquina", ln=True)
     pdf.ln(2)
@@ -226,14 +239,14 @@ def generar_pdf_area(area_nombre):
         if not df_m.empty:
             pdf.set_font("Arial", 'B', 10); pdf.set_text_color(44, 62, 80)
             pdf.cell(0, 8, clean_text(f"Maquina: {m}"), ln=True)
-            # Agrupamos por Falla y por Operador (Levanto Parada)
+            # Agrupamos por Falla y Operador
             top_m = df_m.groupby(['Nivel Evento 6', 'Operador'])['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False).head(8)
             top_m.rename(columns={'Operador': 'Levanto Parada...'}, inplace=True)
             draw_pdf_table(pdf, top_m, [90, 60, 40])
             pdf.ln(5)
 
-    # 5. PRODUCCIÓN POR CÓDIGO
-    pdf.add_page(); pdf.set_font("Arial", 'B', 12); pdf.cell(0, 10, "4. Produccion por Codigo de Producto", ln=True)
+    # 4. PRODUCCIÓN
+    pdf.add_page(); pdf.set_font("Arial", 'B', 12); pdf.cell(0, 10, "4. Produccion por Codigo", ln=True)
     c_maq_p = next((c for c in df_prod_f.columns if 'maquina' in c.lower()), c_maq_datos)
     df_p_area = df_prod_f[df_prod_f[c_maq_p].isin(list_maquinas)]
     if not df_p_area.empty:
@@ -245,19 +258,19 @@ def generar_pdf_area(area_nombre):
         pdf.output(tmp.name); return open(tmp.name, "rb").read()
 
 # BOTONES DE ACCIÓN
-c_pdf1, c_pdf2 = st.columns(2)
-with c_pdf1:
-    if st.button("🏗️ REPORTE PDF ESTAMPADO", use_container_width=True):
+c_btn1, c_btn2 = st.columns(2)
+with c_btn1:
+    if st.button("🏗️ PDF REPORTE ESTAMPADO", use_container_width=True):
         res = generar_pdf_area("ESTAMPADO")
-        if res == "VACIO": st.error("Sin datos para Estampado en este periodo.")
+        if res == "VACIO": st.error("Sin datos en PLANTA Estampado.")
         else: st.session_state['pdf_est'] = res
     if 'pdf_est' in st.session_state:
         st.download_button("⬇️ Descargar Estampado", data=st.session_state['pdf_est'], file_name="Reporte_Estampado.pdf")
             
-with c_pdf2:
-    if st.button("🤖 REPORTE PDF SOLDADURA", use_container_width=True):
+with c_btn2:
+    if st.button("🤖 PDF REPORTE SOLDADURA", use_container_width=True):
         res = generar_pdf_area("SOLDADURA")
-        if res == "VACIO": st.error("Sin datos para Soldadura en este periodo.")
+        if res == "VACIO": st.error("Sin datos en PLANTA Soldadura.")
         else: st.session_state['pdf_sol'] = res
     if 'pdf_sol' in st.session_state:
         st.download_button("⬇️ Descargar Soldadura", data=st.session_state['pdf_sol'], file_name="Reporte_Soldadura.pdf")
