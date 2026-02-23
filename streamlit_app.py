@@ -36,22 +36,18 @@ def load_data():
         def process_df(url):
             try:
                 df = pd.read_csv(url)
-                # Limpieza Numérica
                 cols_num = ['Tiempo (Min)', 'Buenas', 'Retrabajo', 'Observadas', 'OEE', 'Disponibilidad', 'Performance', 'Calidad', 'Eficiencia']
                 for c in cols_num:
                     matches = [col for col in df.columns if c.lower() in col.lower()]
-                    for match in matches:
-                        df[match] = df[match].astype(str).str.replace(',', '.')
-                        df[match] = df[match].str.replace('%', '')
-                        df[match] = pd.to_numeric(df[match], errors='coerce').fillna(0.0)
+                    for m in matches:
+                        df[m] = df[m].astype(str).str.replace(',', '.').str.replace('%', '')
+                        df[m] = pd.to_numeric(df[m], errors='coerce').fillna(0.0)
                 
-                # Limpieza Fechas
                 col_fecha = next((c for c in df.columns if 'fecha' in c.lower()), None)
                 if col_fecha:
                     df['Fecha_DT'] = pd.to_datetime(df[col_fecha], dayfirst=True, errors='coerce')
                     df['Fecha_Filtro'] = df['Fecha_DT'].dt.normalize()
                 
-                # Limpieza Textos
                 for c_txt in ['Máquina', 'Planta', 'Fábrica', 'Evento', 'Operador', 'Código', 'Nivel Evento 6', 'Nivel Evento 4', 'Nivel Evento 3']:
                     match = next((col for col in df.columns if c_txt.lower() in col.lower()), None)
                     if match: df[match] = df[match].fillna('').astype(str).str.strip()
@@ -132,7 +128,6 @@ with t1:
 with t2:
     show_metric_row(get_metrics(df_oee_f, 'SOLDADURA'))
 
-# 6. MÓDULO INDICADORES POR OPERADOR
 st.markdown("---")
 st.header("📈 INDICADORES POR OPERADOR")
 with st.expander("👉 Ver Resumen y Evolución de Operarios"):
@@ -150,7 +145,6 @@ with st.expander("☕ Tiempos de Baño y Refrigerio"):
                 res = df_d.groupby('Operador')['Tiempo (Min)'].agg(['sum', 'mean', 'count']).reset_index()
                 st.dataframe(res, use_container_width=True)
 
-# 8. MÓDULO PRODUCCIÓN GENERAL
 st.markdown("---")
 st.header("Producción General")
 if not df_prod_f.empty:
@@ -158,13 +152,11 @@ if not df_prod_f.empty:
     df_st = df_prod_f.groupby(c_maq)[['Buenas', 'Retrabajo']].sum().reset_index()
     st.plotly_chart(px.bar(df_st, x=c_maq, y=['Buenas', 'Retrabajo'], barmode='stack'), use_container_width=True)
 
-# 9. ANÁLISIS DE TIEMPOS
 st.markdown("---")
 st.header("Análisis de Tiempos")
 df_f['Tipo'] = df_f['Evento'].apply(lambda x: 'Producción' if 'Producción' in str(x) else 'Parada')
 st.plotly_chart(px.pie(df_f, values='Tiempo (Min)', names='Tipo', hole=0.4), use_container_width=True)
 
-# 10. ANÁLISIS DE FALLAS
 st.markdown("---")
 st.header("Análisis de Fallas")
 df_fallas = df_f[df_f['Nivel Evento 3'].astype(str).str.contains('FALLA', case=False)].copy()
@@ -172,8 +164,11 @@ if not df_fallas.empty:
     top_f = df_fallas.groupby('Nivel Evento 6')['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False).head(15)
     st.plotly_chart(px.bar(top_f, x='Tiempo (Min)', y='Nivel Evento 6', orientation='h'), use_container_width=True)
 
+st.divider()
+with st.expander("📂 Registro Completo"): st.dataframe(df_f, use_container_width=True)
+
 # ==========================================
-# 11. MÓDULO PDF (REESTRUCTURADO AL FORMATO SOLICITADO)
+# 11. MÓDULO PDF (REPORTE DIARIO DETALLADO)
 # ==========================================
 st.markdown("---")
 st.header("📄 Generar Reporte PDF")
@@ -197,21 +192,22 @@ def generar_pdf_original(area_nombre, fecha_sel):
     pdf = FPDF(); pdf.add_page(); pdf.set_font("Arial", 'B', 14)
     fecha_dt = pd.to_datetime(fecha_sel)
     
-    # TÍTULO Y FECHA
-    pdf.cell(0, 10, clean_txt(f"REPORTE DE INDICADORES - {area_nombre.upper()}"), ln=True, align='L')
-    pdf.set_font("Arial", '', 11)
-    pdf.cell(0, 8, clean_txt(f"Fecha: {fecha_sel.strftime('%d/%m/%Y')}"), ln=True); pdf.ln(4)
-
-    # DATOS FILTRADOS
+    # DATOS FILTRADOS POR DÍA SELECCIONADO
     df_dia = df_f[df_f['Fecha_Filtro'] == fecha_dt]
     df_area = df_dia[df_dia[col_planta].str.upper().str.contains(area_nombre.upper())]
     if df_area.empty: return None
     df_oee_dia = df_oee_f[df_oee_f['Fecha_Filtro'] == fecha_dt]
+    df_prod_dia = df_prod_f[df_prod_f['Fecha_Filtro'] == fecha_dt]
 
-    # 1. KPIs GENERALES Y POR MAQUINA
+    # TÍTULO
+    pdf.cell(0, 10, clean_txt(f"REPORTE DE INDICADORES - {area_nombre.upper()}"), ln=True, align='L')
+    pdf.set_font("Arial", '', 11)
+    pdf.cell(0, 8, clean_txt(f"Fecha: {fecha_sel.strftime('%d/%m/%Y')}"), ln=True); pdf.ln(4)
+
+    # 1. KPIs
     pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "1. KPIs Generales y por Maquina", ln=True)
-    pdf.set_font("Arial", '', 10)
     m = get_metrics(df_oee_dia, area_nombre)
+    pdf.set_font("Arial", '', 10)
     pdf.cell(0, 7, clean_txt(f" GLOBAL {area_nombre.upper()}: OEE {m['OEE']:.1%} | Disp: {m['DISP']:.1%} | Perf: {m['PERF']:.1%} | Cal: {m['CAL']:.1%}"), ln=True)
     
     maquinas_area = sorted(df_area['Máquina'].unique())
@@ -220,40 +216,47 @@ def generar_pdf_original(area_nombre, fecha_sel):
         pdf.cell(10); pdf.cell(0, 6, clean_txt(f"- {maq}: OEE {m_maq['OEE']:.1%} (Disp: {m_maq['DISP']:.1%} / Perf: {m_maq['PERF']:.1%} / Cal: {m_maq['CAL']:.1%})"), ln=True)
     pdf.ln(5)
 
-    # 2. TOP 10 FALLAS
+    # 2. TOP 10 FALLAS (TABLA Y GRÁFICO)
     pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "2. Top 10 Fallas (Tiempo y Frecuencia)", ln=True)
     df_fal_dia = df_area[df_area['Nivel Evento 3'].str.contains('FALLA', case=False)]
     if not df_fal_dia.empty:
         top_f_pdf = df_fal_dia.groupby('Nivel Evento 6')['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False).head(10)
         draw_table_custom(pdf, top_f_pdf, [140, 50])
+        
+        # Gráfico de Fallas Diario
+        fig_fal = px.bar(top_f_pdf, x='Tiempo (Min)', y='Nivel Evento 6', orientation='h', title="Top Fallas del Dia")
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
+            fig_fal.write_image(tmp.name); pdf.ln(2); pdf.image(tmp.name, x=10, w=160); os.remove(tmp.name)
     pdf.ln(5)
 
-    # 3. ANALISIS DE EVENTOS
-    pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "3. Analisis de Eventos: Produccion vs Paradas", ln=True)
-    # Resumen rápido en texto
-    prod_t = df_area[df_area['Evento'].str.contains('Producción', case=False)]['Tiempo (Min)'].sum()
-    para_t = df_area[~df_area['Evento'].str.contains('Producción', case=False)]['Tiempo (Min)'].sum()
-    pdf.set_font("Arial", '', 10)
-    pdf.cell(0, 7, clean_txt(f"Tiempo Produccion: {prod_t:,.2f} min | Tiempo Paradas: {para_t:,.2f} min"), ln=True)
+    # 3. ANALISIS DE EVENTOS (GRÁFICO PIE DIARIO)
+    pdf.add_page(); pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "3. Analisis de Eventos: Produccion vs Paradas", ln=True)
+    df_area_tipo = df_area.copy()
+    df_area_tipo['Tipo'] = df_area_tipo['Evento'].apply(lambda x: 'Produccion' if 'Produccion' in str(x) else 'Parada')
+    fig_pie = px.pie(df_area_tipo, values='Tiempo (Min)', names='Tipo', title="Balance Diario")
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
+        fig_pie.write_image(tmp.name); pdf.image(tmp.name, x=30, w=140); os.remove(tmp.name)
     pdf.ln(5)
 
     # 4. TIEMPOS TOTALES POR OPERADOR
     pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "4. Tiempos Totales por Operador (Min)", ln=True)
-    df_op_t = df_area.groupby('Operador')['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False)
-    draw_table_custom(pdf, df_op_t, [140, 50])
+    df_op_dia = df_area.groupby('Operador')['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False)
+    draw_table_custom(pdf, df_op_dia, [140, 50])
     pdf.ln(5)
 
-    # 5. REGISTRO DE PARADAS (TOP 15)
-    pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "5. Registro de Paradas (Top 15)", ln=True)
-    df_paradas_pdf = df_area[~df_area['Evento'].str.contains('Producción', case=False)].sort_values('Tiempo (Min)', ascending=False).head(15)
-    df_paradas_pdf = df_paradas_pdf[['Evento', 'Tiempo (Min)', 'Operador']]
-    df_paradas_pdf.columns = ['Evento', 'Tiempo (Min)', 'Levanto Parada...']
-    draw_table_custom(pdf, df_paradas_pdf, [80, 40, 70])
-    pdf.ln(5)
+    # 5. REGISTRO DE PARADAS Y QUIEN LEVANTO (DETALLE POR MAQUINA)
+    pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "5. Registro de Fallas Detallado por Maquina", ln=True)
+    if not df_fal_dia.empty:
+        for maq in maquinas_area:
+            df_m = df_fal_dia[df_fal_dia['Máquina'] == maq]
+            if not df_m.empty:
+                pdf.set_font("Arial", 'B', 10); pdf.cell(0, 7, clean_txt(f"Maq: {maq}"), ln=True)
+                res_m = df_m.groupby(['Nivel Evento 6', 'Operador'])['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False)
+                res_m.columns = ['Falla', 'Levanto Parada', 'Min']
+                draw_table_custom(pdf, res_m, [80, 70, 40]); pdf.ln(4)
 
     # 6. PRODUCCION TOTAL POR MAQUINA
-    pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "6. Produccion Total por Maquina", ln=True)
-    df_prod_dia = df_prod_f[df_prod_f['Fecha_Filtro'] == fecha_dt]
+    pdf.add_page(); pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "6. Produccion Total por Maquina", ln=True)
     df_prod_area = df_prod_dia[df_prod_dia['Máquina'].isin(maquinas_area)]
     if not df_prod_area.empty:
         res_prod = df_prod_area.groupby('Máquina')[['Buenas', 'Retrabajo', 'Observadas']].sum().reset_index()
