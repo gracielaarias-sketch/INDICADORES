@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -8,19 +9,12 @@ import os
 # ==========================================
 # 1. CONFIGURACIÓN Y ESTILOS (LAYOUT ORIGINAL)
 # ==========================================
-st.set_page_config(
-    page_title="Indicadores FAMMA", 
-    layout="wide", 
-    page_icon="🏭", 
-    initial_sidebar_state="expanded"
-)
+st.set_page_config(page_title="Indicadores FAMMA", layout="wide", page_icon="🏭")
 
 st.markdown("""
 <style>
     [data-testid="stMetricValue"] { font-size: 24px; font-weight: bold; }
-    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
-    hr { margin-top: 2rem; margin-bottom: 2rem; }
-    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; border: 1px solid #dee2e6; }
+    .stMetric { background-color: #f8f9fa; padding: 15px; border-radius: 10px; border: 1px solid #dee2e6; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -37,7 +31,7 @@ def load_data():
         def process_df(url):
             try:
                 df = pd.read_csv(url)
-                # Limpieza Numérica Avanzada (Maneja 4.054,01 o 4,054.01)
+                # Limpieza numérica (4.054,01 -> 4054.01)
                 cols_num = ['Tiempo', 'Buenas', 'Retrabajo', 'Observadas', 'OEE', 'Disponibilidad', 'Performance', 'Calidad']
                 for c in cols_num:
                     target = [col for col in df.columns if c.lower() in col.lower()]
@@ -45,14 +39,14 @@ def load_data():
                         df[col] = df[col].astype(str).str.replace('.', '').str.replace(',', '.')
                         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
                 
-                # Normalización de Fechas
+                # Fechas
                 c_fecha = next((c for c in df.columns if 'fecha' in c.lower()), None)
                 if c_fecha:
                     df['Fecha_DT'] = pd.to_datetime(df[c_fecha], dayfirst=True, errors='coerce')
                     df['Fecha_Filtro'] = df['Fecha_DT'].dt.normalize()
                 
-                # Limpieza Textos
-                for c_txt in ['Máquina', 'Planta', 'Fábrica', 'Evento', 'Operador', 'Nivel Evento 6']:
+                # Textos
+                for c_txt in ['Máquina', 'Planta', 'Fábrica', 'Evento', 'Operador', 'Nivel Evento 6', 'Nivel Evento 4', 'Nivel Evento 3']:
                     match = next((col for col in df.columns if c_txt.lower() in col.lower()), None)
                     if match: df[match] = df[match].fillna('').astype(str).str.strip()
                 return df.dropna(subset=['Fecha_Filtro'])
@@ -65,73 +59,72 @@ def load_data():
 df_raw, df_oee_raw, df_prod_raw, df_op_raw = load_data()
 
 # ==========================================
-# 3. FILTROS GLOBALES (SIDEBAR)
+# 3. FILTROS DASHBOARD (SIDEBAR)
 # ==========================================
 if df_raw.empty:
-    st.warning("⚠️ No se pudieron cargar los datos. Revisa la conexión.")
+    st.error("Error: No se pudieron cargar los datos de Google Sheets.")
     st.stop()
 
-st.sidebar.header("📅 Rango Dashboard")
-min_d, max_d = df_raw['Fecha_Filtro'].min().date(), df_raw['Fecha_Filtro'].max().date()
-rango = st.sidebar.date_input("Periodo", [min_d, max_d])
+st.sidebar.header("📅 Filtros Dashboard")
+rango = st.sidebar.date_input("Periodo", [df_raw['Fecha_Filtro'].min().date(), df_raw['Fecha_Filtro'].max().date()])
 
-col_planta = next((c for c in df_raw.columns if 'planta' in c.lower() or 'fábrica' in c.lower()), 'Fábrica')
-plantas_sel = st.sidebar.multiselect("Seleccionar Planta", sorted(df_raw[col_planta].unique()), default=sorted(df_raw[col_planta].unique()))
+col_p = next((c for c in df_raw.columns if 'planta' in c.lower() or 'fábrica' in c.lower()), 'Fábrica')
+plantas_sel = st.sidebar.multiselect("Planta", sorted(df_raw[col_p].unique()), default=sorted(df_raw[col_p].unique()))
 
 if isinstance(rango, (list, tuple)) and len(rango) == 2:
     ini, fin = pd.to_datetime(rango[0]), pd.to_datetime(rango[1])
 else:
-    ini = fin = pd.to_datetime(min_d)
+    ini = fin = pd.to_datetime(rango[0])
 
-# Bases filtradas para el Dashboard (acumulado)
-df_f = df_raw[(df_raw['Fecha_Filtro'] >= ini) & (df_raw['Fecha_Filtro'] <= fin) & (df_raw[col_planta].isin(plantas_sel))]
+# Bases para el Dashboard (Acumuladas según sidebar)
+df_f = df_raw[(df_raw['Fecha_Filtro'] >= ini) & (df_raw['Fecha_Filtro'] <= fin) & (df_raw[col_p].isin(plantas_sel))]
 df_oee_f = df_oee_raw[(df_oee_raw['Fecha_Filtro'] >= ini) & (df_oee_raw['Fecha_Filtro'] <= fin)]
-df_prod_f = df_prod_raw[(df_prod_raw['Fecha_Filtro'] >= ini) & (df_prod_raw['Fecha_Filtro'] <= fin)]
 
 # ==========================================
-# 4. LÓGICA KPI (BÚSQUEDA FLEXIBLE)
+# 4. FUNCIONES KPI (BÚSQUEDA FLEXIBLE)
 # ==========================================
-def get_kpis(df_source, filter_str):
-    mask = df_source.apply(lambda row: row.astype(str).str.upper().str.contains(filter_str.upper()).any(), axis=1)
-    d = df_source[mask].copy()
+def get_kpis_safe(df, search_str):
+    mask = df.apply(lambda row: row.astype(str).str.upper().str.contains(search_str.upper()).any(), axis=1)
+    d = df[mask]
     if d.empty: return {'OEE':0.0, 'D':0.0, 'P':0.0, 'C':0.0}
-
-    def safe_mean(df, text):
-        col = next((c for c in df.columns if text.lower() in c.lower()), None)
-        if col:
-            v = pd.to_numeric(df[col], errors='coerce').mean()
-            return v / 100 if v > 1.1 else v
+    
+    def get_col_val(df_in, name):
+        c = next((col for col in df_in.columns if name.lower() in col.lower()), None)
+        if c:
+            val = pd.to_numeric(df_in[c], errors='coerce').mean()
+            return val / 100 if val > 1.1 else val
         return 0.0
 
-    return {'OEE': safe_mean(d, 'OEE'), 'D': safe_mean(d, 'Disponibilidad'), 
-            'P': safe_mean(d, 'Performance'), 'C': safe_mean(d, 'Calidad')}
+    return {'OEE': get_col_val(d, 'OEE'), 'D': get_col_val(d, 'Disponibilidad'), 
+            'P': get_col_val(d, 'Performance'), 'C': get_col_val(d, 'Calidad')}
 
-def show_metrics(k):
+def render_metrics(k):
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("OEE", f"{k['OEE']:.1%}"); c2.metric("Disp.", f"{k['D']:.1%}")
     c3.metric("Perf.", f"{k['P']:.1%}"); c4.metric("Calidad", f"{k['C']:.1%}")
 
 # ==========================================
-# 5. DASHBOARD UI (LAYOUT ORIGINAL)
+# 5. DASHBOARD UI (ORDEN ORIGINAL)
 # ==========================================
 st.title("🏭 INDICADORES FAMMA")
-show_metrics(get_kpis(df_oee_f, 'GENERAL'))
+render_metrics(get_kpis_safe(df_oee_f, 'GENERAL'))
 
 st.divider()
-t1, t2 = st.tabs(["Estampado", "Soldadura"])
-with t1:
-    show_metrics(get_kpis(df_oee_f, 'ESTAMPADO'))
+tab1, tab2 = st.tabs(["Estampado", "Soldadura"])
+with tab1:
+    render_metrics(get_kpis_safe(df_oee_f, 'ESTAMPADO'))
     with st.expander("Ver Líneas"):
         for l in ['L1', 'L2', 'L3', 'L4']:
-            st.write(f"**{l}**"); show_metrics(get_kpis(df_oee_f, l))
-with t2:
-    show_metrics(get_kpis(df_oee_f, 'SOLDADURA'))
+            st.write(f"**{l}**"); render_metrics(get_kpis_safe(df_oee_f, l))
+
+with tab2:
+    render_metrics(get_kpis_safe(df_oee_f, 'SOLDADURA'))
     with st.expander("Ver Detalle"):
-        st.write("**Robotizada**"); show_metrics(get_kpis(df_oee_f, 'CELDA'))
+        st.write("**Celdas Robotizadas**"); render_metrics(get_kpis_safe(df_oee_f, 'CELDA'))
 
 st.markdown("---")
 st.header("📈 INDICADORES POR OPERADOR")
-with st.expander("👉 Ver Resumen Operarios"):
+with st.expander("👉 Ver Resumen"):
     if not df_op_raw.empty:
         df_op_f = df_op_raw[(df_op_raw['Fecha_Filtro'] >= ini) & (df_op_raw['Fecha_Filtro'] <= fin)]
         st.dataframe(df_op_f.groupby('Operador')['Fecha_Filtro'].nunique().reset_index(), use_container_width=True)
@@ -145,21 +138,30 @@ with st.expander("☕ Tiempos de Baño y Refrigerio"):
 
 st.markdown("---")
 st.header("Producción General")
-if not df_prod_f.empty:
-    c_m = next(c for c in df_prod_f.columns if 'maquina' in c.lower())
-    st.plotly_chart(px.bar(df_prod_f.groupby(c_m)[['Buenas', 'Retrabajo']].sum().reset_index(), x=c_m, y=['Buenas', 'Retrabajo'], barmode='stack'), use_container_width=True)
+if not df_prod_raw.empty:
+    df_p_f = df_prod_raw[(df_prod_raw['Fecha_Filtro'] >= ini) & (df_prod_raw['Fecha_Filtro'] <= fin)]
+    c_m = next(c for c in df_p_f.columns if 'maquina' in c.lower())
+    st.plotly_chart(px.bar(df_p_f.groupby(c_m)[['Buenas', 'Retrabajo']].sum().reset_index(), x=c_m, y=['Buenas', 'Retrabajo'], barmode='stack', color_discrete_map={'Buenas':'#2ecc71','Retrabajo':'#f1c40f'}), use_container_width=True)
 
 st.markdown("---")
 st.header("Análisis de Tiempos")
-df_f['Tipo'] = df_f['Evento'].apply(lambda x: 'Produccion' if 'Producción' in str(x) or 'Produccion' in str(x) else 'Parada')
-st.plotly_chart(px.pie(df_f, values='Tiempo (Min)', names='Tipo', color='Tipo', color_discrete_map={'Produccion':'#2ecc71','Parada':'#e74c3c'}), use_container_width=True)
+df_f_bal = df_f.copy()
+df_f_bal['Tipo'] = df_f_bal['Evento'].apply(lambda x: 'Produccion' if 'Producción' in str(x) else 'Parada')
+st.plotly_chart(px.pie(df_f_bal, values='Tiempo (Min)', names='Tipo', color='Tipo', color_discrete_map={'Produccion':'#2ecc71','Parada':'#e74c3c'}), use_container_width=True)
+
+st.markdown("---")
+st.header("Análisis de Fallas")
+df_fallas_ui = df_f[df_f['Nivel Evento 3'].str.contains('FALLA', case=False)]
+if not df_fallas_ui.empty:
+    top_f = df_fallas_ui.groupby('Nivel Evento 6')['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False).head(15)
+    st.plotly_chart(px.bar(top_f, x='Tiempo (Min)', y='Nivel Evento 6', orientation='h', color_discrete_sequence=['#e74c3c']), use_container_width=True)
 
 # ==========================================
 # 6. MÓDULO PDF (REPORTE DIARIO ESTRICTO)
 # ==========================================
 st.markdown("---")
 st.header("📄 Generar Reporte PDF")
-dia_pdf = st.selectbox("📅 Seleccione Fecha para el PDF:", sorted(df_raw['Fecha_Filtro'].dt.date.unique(), reverse=True))
+dia_pdf = st.selectbox("📅 Seleccione Fecha EXCLUSIVA para el PDF:", sorted(df_raw['Fecha_Filtro'].dt.date.unique(), reverse=True))
 
 def clean(t): return str(t).encode('latin-1', 'replace').decode('latin-1')
 
@@ -173,12 +175,17 @@ def draw_table(pdf, df, widths):
             pdf.cell(w, 6, clean(val), 1)
         pdf.ln()
 
-def generar_pdf_final(area, fecha_sel):
+def generar_pdf_vfinal(area, fecha_sel):
     f_dt = pd.to_datetime(fecha_sel)
-    # FILTRO ESTRICTO: Solo el día seleccionado
+    
+    # --- FILTRADO 100% DIARIO (Ignora Sidebar) ---
     df_d = df_raw[df_raw['Fecha_Filtro'] == f_dt]
-    df_a = df_d[df_d[col_planta].str.upper().str.contains(area.upper())]
-    if df_a.empty: return None
+    df_a = df_d[df_d[col_p].str.upper().str.contains(area.upper())]
+    df_oee_d = df_oee_raw[df_oee_raw['Fecha_Filtro'] == f_dt]
+    df_prod_d = df_prod_raw[df_prod_raw['Fecha_Filtro'] == f_dt]
+
+    if df_a.empty:
+        st.error(f"Sin datos para {area} el {fecha_sel}"); return None
 
     pdf = FPDF(); pdf.add_page(); pdf.set_font("Arial", 'B', 14)
     pdf.cell(0, 10, clean(f"REPORTE DE INDICADORES - {area}"), ln=True)
@@ -186,56 +193,60 @@ def generar_pdf_final(area, fecha_sel):
 
     # 1. KPIs
     pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "1. KPIs Generales y por Maquina", ln=True)
-    k = get_kpis(df_oee_raw[df_oee_raw['Fecha_Filtro'] == f_dt], area)
+    k = get_kpis_safe(df_oee_d, area)
     pdf.set_font("Arial", '', 10); pdf.cell(0, 7, clean(f" GLOBAL {area}: OEE {k['OEE']:.1%} | Disp: {k['D']:.1%} | Perf: {k['P']:.1%} | Cal: {k['C']:.1%}"), ln=True)
     for m in sorted(df_a['Máquina'].unique()):
-        km = get_kpis(df_oee_raw[df_oee_raw['Fecha_Filtro'] == f_dt], m)
-        pdf.cell(10); pdf.cell(0, 6, clean(f"- {m}: OEE {km['OEE']:.1%} (D: {km['D']:.1%} / P: {km['P']:.1%} / C: {km['C']:.1%})"), ln=True)
+        km = get_kpis_safe(df_oee_d, m)
+        pdf.cell(10); pdf.cell(0, 6, clean(f"- {m}: OEE {km['OEE']:.1%} (Disp: {km['D']:.1%} / Perf: {km['P']:.1%} / Cal: {km['C']:.1%})"), ln=True)
 
     # 2. FALLAS (GRÁFICO ROJO)
-    pdf.ln(5); pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "2. Top 10 Fallas del Dia", ln=True)
-    df_fal = df_a[df_a['Nivel Evento 3'].str.contains('FALLA', case=False)]
-    if not df_fal.empty:
-        top_f = df_fal.groupby('Nivel Evento 6')['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False).head(10)
+    pdf.ln(5); pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "2. Top 10 Fallas (Tiempo)", ln=True)
+    df_f_dia = df_a[df_a['Nivel Evento 3'].str.contains('FALLA', case=False)]
+    if not df_f_dia.empty:
+        top_f = df_f_dia.groupby('Nivel Evento 6')['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False).head(10)
         draw_table(pdf, top_f, [140, 50])
-        fig = px.bar(top_f, x='Tiempo (Min)', y='Nivel Evento 6', orientation='h', color_discrete_sequence=['#e74c3c'])
+        fig = px.bar(top_f, x='Tiempo (Min)', y='Nivel Evento 6', orientation='h', color_discrete_sequence=['#e74c3c'], title=f"Fallas {fecha_sel}")
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
             fig.write_image(tmp.name); pdf.ln(2); pdf.image(tmp.name, x=10, w=160); os.remove(tmp.name)
 
-    # 3. BALANCE PIE
-    pdf.add_page(); pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "3. Produccion vs Paradas", ln=True)
-    df_a['T'] = df_a['Evento'].apply(lambda x: 'Produccion' if 'Producción' in str(x) or 'Produccion' in str(x) else 'Parada')
-    fig_p = px.pie(df_a, values='Tiempo (Min)', names='T', color='T', color_discrete_map={'Produccion':'#2ecc71','Parada':'#e74c3c'})
+    # 3. BALANCE (GRÁFICO COLORES)
+    pdf.add_page(); pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "3. Analisis de Eventos: Produccion vs Paradas", ln=True)
+    df_a['T'] = df_a['Evento'].apply(lambda x: 'Produccion' if 'Producción' in str(x) else 'Parada')
+    fig_pie = px.pie(df_a, values='Tiempo (Min)', names='T', color='T', color_discrete_map={'Produccion':'#2ecc71','Parada':'#e74c3c'})
     with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
-        fig_p.write_image(tmp.name); pdf.image(tmp.name, x=40, w=120); os.remove(tmp.name)
+        fig_pie.write_image(tmp.name); pdf.image(tmp.name, x=40, w=120); os.remove(tmp.name)
 
-    # 4. OPERADORES
+    # 4. TIEMPOS OPERADOR
     pdf.ln(5); pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "4. Tiempos Totales por Operador (Min)", ln=True)
     draw_table(pdf, df_a.groupby('Operador')['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False), [140, 50])
 
     # 5. DETALLE FALLAS (QUIEN LEVANTO)
     pdf.ln(5); pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "5. Registro de Fallas con Operador", ln=True)
-    if not df_fal.empty:
-        res_fal = df_fal.groupby(['Máquina', 'Nivel Evento 6', 'Operador'])['Tiempo (Min)'].sum().reset_index().sort_values(['Máquina', 'Tiempo (Min)'], ascending=[True, False]).head(20)
-        res_fal.columns = ['Maq', 'Falla', 'Levanto', 'Min']
-        draw_table(pdf, res_fal, [40, 70, 50, 30])
+    if not df_f_dia.empty:
+        for m in sorted(df_a['Máquina'].unique()):
+            dm = df_f_dia[df_f_dia['Máquina'] == m]
+            if not dm.empty:
+                pdf.set_font("Arial", 'B', 9); pdf.cell(0, 7, clean(f"Maq: {m}"), ln=True)
+                res = dm.groupby(['Nivel Evento 6', 'Operador'])['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False)
+                res.columns = ['Falla', 'Levanto Parada', 'Min']
+                draw_table(pdf, res, [80, 70, 40]); pdf.ln(3)
 
     # 6. PRODUCCIÓN
-    pdf.ln(5); pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "6. Produccion Total del Dia", ln=True)
-    df_pd = df_prod_raw[df_prod_raw['Fecha_Filtro'] == f_dt]
-    df_pa = df_pd[df_pd['Máquina'].isin(df_a['Máquina'].unique())]
+    pdf.add_page(); pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "6. Produccion Total del Dia", ln=True)
+    df_pa = df_prod_d[df_prod_d['Máquina'].isin(df_a['Máquina'].unique())]
     if not df_pa.empty:
-        draw_table(pdf, df_pa.groupby('Máquina')[['Buenas', 'Retrabajo', 'Observadas']].sum().reset_index(), [70, 40, 40, 40])
+        res_p = df_pa.groupby('Máquina')[['Buenas', 'Retrabajo', 'Observadas']].sum().reset_index()
+        draw_table(pdf, res_p, [70, 40, 40, 40])
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         pdf.output(tmp.name); return open(tmp.name, "rb").read()
 
 c1, c2 = st.columns(2)
 with c1:
-    if st.button("🏗️ PDF Estampado"):
-        res = generar_pdf_final("ESTAMPADO", dia_pdf)
+    if st.button("🏗️ Descargar PDF Estampado"):
+        res = generar_pdf_vfinal("ESTAMPADO", dia_pdf)
         if res: st.download_button(f"Reporte_Estampado_{dia_pdf}.pdf", res, f"Reporte_Estampado_{dia_pdf}.pdf")
 with c2:
-    if st.button("🤖 PDF Soldadura"):
-        res = generar_pdf_final("SOLDADURA", dia_pdf)
+    if st.button("🤖 Descargar PDF Soldadura"):
+        res = generar_pdf_vfinal("SOLDADURA", dia_pdf)
         if res: st.download_button(f"Reporte_Soldadura_{dia_pdf}.pdf", res, f"Reporte_Soldadura_{dia_pdf}.pdf")
