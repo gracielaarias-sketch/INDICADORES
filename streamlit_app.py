@@ -246,7 +246,7 @@ st.divider()
 with st.expander("📂 Registro Completo"): st.dataframe(df_f, use_container_width=True)
 
 # ==========================================
-# 11. EXPORTACIÓN A PDF POR ÁREA
+# 11. EXPORTACIÓN A PDF (CORRECCIÓN KEYERROR)
 # ==========================================
 st.markdown("---")
 st.header("📄 Exportar Reportes PDF")
@@ -256,19 +256,18 @@ try:
     import tempfile
     import os
 except ImportError:
-    st.warning("⚠️ Faltan librerías para exportar. Asegúrate de tener 'fpdf2' y 'kaleido' en tu requirements.txt.")
+    st.warning("⚠️ Faltan librerías para exportar.")
 
 def clean_text(text):
     return str(text).encode('latin-1', 'replace').decode('latin-1')
 
-def draw_pdf_table(pdf, df, col_widths, max_rows=20):
+def draw_pdf_table(pdf, df, col_widths, max_rows=10):
     if df.empty:
         pdf.set_font("Arial", 'I', 10)
-        pdf.cell(0, 8, "No hay datos para mostrar.", ln=True)
+        pdf.cell(0, 8, "No hay datos.", ln=True)
         return
     pdf.set_fill_color(44, 62, 80); pdf.set_text_color(255, 255, 255); pdf.set_font("Arial", 'B', 9)
-    for col, width in zip(df.columns, col_widths):
-        pdf.cell(width, 8, clean_text(col)[:25], border=1, align='C', fill=True)
+    for col, width in zip(df.columns, col_widths): pdf.cell(width, 8, clean_text(col)[:25], border=1, align='C', fill=True)
     pdf.ln(); pdf.set_text_color(0, 0, 0); pdf.set_font("Arial", '', 9)
     for i, (_, row) in enumerate(df.head(max_rows).iterrows()):
         pdf.set_fill_color(236, 240, 241) if i % 2 == 0 else pdf.set_fill_color(255, 255, 255)
@@ -281,7 +280,14 @@ def draw_pdf_table(pdf, df, col_widths, max_rows=20):
 def get_metrics_list(machines_list):
     m = {'OEE': 0.0, 'DISP': 0.0, 'PERF': 0.0, 'CAL': 0.0}
     if df_oee_f.empty: return m
-    c_maq = next((c for c in df_oee_f.columns if 'máquina' in c.lower() or 'maquina' in c.lower()), 'Máquina')
+    
+    # Búsqueda robusta de columna Máquina
+    c_maq = next((c for c in df_oee_f.columns if 'maquina' in c.lower() or 'máquina' in c.lower()), None)
+    
+    # Si no encuentra la columna, devuelve métricas vacías en lugar de fallar
+    if not c_maq:
+        return m
+        
     datos = df_oee_f[df_oee_f[c_maq].isin(machines_list)]
     if not datos.empty:
         for key, col_search in {'OEE':'OEE', 'DISP':'Disponibilidad', 'PERF':'Performance', 'CAL':'Calidad'}.items():
@@ -304,13 +310,19 @@ def generar_pdf_area(area_nombre, machines_filter, is_exclusive=False):
     pdf.cell(0, 8, f"Periodo: {ini.strftime('%d/%m/%Y')} al {fin.strftime('%d/%m/%Y')}", ln=True, align='C')
     pdf.ln(5)
 
-    # Filtrado de Datos
-    c_maq = next((c for c in df_f.columns if 'máquina' in c.lower() or 'maquina' in c.lower()), 'Máquina')
+    # Identificación de columna Maquina en df_f
+    c_maq_f = next((c for c in df_f.columns if 'maquina' in c.lower() or 'máquina' in c.lower()), None)
+    
+    if not c_maq_f:
+        pdf.cell(0, 10, "Error: No se encontro columna Maquina en los datos.", ln=True)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            pdf.output(tmp.name); return open(tmp.name, "rb").read()
+
     if is_exclusive:
-        df_area = df_f[~df_f[c_maq].isin(machines_filter)].copy()
-        list_maquinas = sorted(df_area[c_maq].unique())
+        df_area = df_f[~df_f[c_maq_f].isin(machines_filter)].copy()
+        list_maquinas = sorted(df_area[c_maq_f].unique())
     else:
-        df_area = df_f[df_f[c_maq].isin(machines_filter)].copy()
+        df_area = df_f[df_f[c_maq_f].isin(machines_filter)].copy()
         list_maquinas = machines_filter
 
     # 1. KPIs
@@ -334,22 +346,16 @@ def generar_pdf_area(area_nombre, machines_filter, is_exclusive=False):
         top_fallas.rename(columns={'Operador': 'Levanto Parada...'}, inplace=True)
         draw_pdf_table(pdf, top_fallas, [90, 30, 70], max_rows=10)
         
-        fig = px.bar(df_fallas_area.groupby('Nivel Evento 6')['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False).head(10), 
-                     x='Tiempo (Min)', y='Nivel Evento 6', orientation='h', color_discrete_sequence=['#e74c3c'])
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
-            fig.write_image(tmp.name); pdf.ln(2); pdf.image(tmp.name, x=10, w=180)
-        
         # Desglose por máquina
         pdf.add_page(); pdf.set_font("Arial", 'B', 11); pdf.cell(0, 10, "Detalle de Fallas por Maquina:", ln=True)
         for m_name in list_maquinas:
-            df_m = df_fallas_area[df_fallas_area[c_maq] == m_name]
+            df_m = df_fallas_area[df_fallas_area[c_maq_f] == m_name]
             if not df_m.empty:
                 pdf.set_font("Arial", 'B', 9); pdf.cell(0, 7, f"Maquina: {m_name}", ln=True)
                 top_m = df_m.groupby(['Nivel Evento 6', 'Operador'])['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False).head(5)
                 top_m.rename(columns={'Operador': 'Levanto Parada...'}, inplace=True)
                 draw_pdf_table(pdf, top_m, [90, 30, 70], max_rows=5); pdf.ln(2)
-    else:
-        pdf.cell(0, 10, "No hay registros de fallas.", ln=True)
+    pdf.ln(5)
 
     # 3. Gráfico Eventos
     pdf.add_page(); pdf.set_text_color(41, 128, 185); pdf.set_font("Arial", 'B', 12); pdf.cell(0, 10, "3. Analisis de Eventos: Produccion vs Paradas", ln=True)
@@ -366,17 +372,19 @@ def generar_pdf_area(area_nombre, machines_filter, is_exclusive=False):
 
     # 5. Producción
     pdf.add_page(); pdf.set_text_color(41, 128, 185); pdf.set_font("Arial", 'B', 12); pdf.cell(0, 10, "5. Produccion Total por Maquina y Codigo", ln=True)
-    c_maq_p = next((c for c in df_prod_f.columns if 'máquina' in c.lower() or 'maquina' in c.lower()), 'Máquina')
-    if is_exclusive:
-        df_p = df_prod_f[~df_prod_f[c_maq_p].isin(machines_filter)].copy()
-    else:
-        df_p = df_prod_f[df_prod_f[c_maq_p].isin(machines_filter)].copy()
+    c_maq_p = next((c for c in df_prod_f.columns if 'maquina' in c.lower() or 'máquina' in c.lower()), None)
     
-    if not df_p.empty:
-        c_cod = next((c for c in df_p.columns if 'código' in c.lower() or 'codigo' in c.lower()), 'Código')
-        df_res = df_p.groupby([c_maq_p, c_cod])[['Buenas', 'Retrabajo', 'Observadas']].sum().reset_index()
-        df_res.rename(columns={c_cod: 'Cod. Prod.', 'Buenas': 'Linea OK'}, inplace=True)
-        draw_pdf_table(pdf, df_res, [50, 45, 30, 30, 30], max_rows=40)
+    if c_maq_p:
+        if is_exclusive:
+            df_p = df_prod_f[~df_prod_f[c_maq_p].isin(machines_filter)].copy()
+        else:
+            df_p = df_prod_f[df_prod_f[c_maq_p].isin(machines_filter)].copy()
+        
+        if not df_p.empty:
+            c_cod = next((c for c in df_p.columns if 'código' in c.lower() or 'codigo' in c.lower()), 'Código')
+            df_res = df_p.groupby([c_maq_p, c_cod])[['Buenas', 'Retrabajo', 'Observadas']].sum().reset_index()
+            df_res.rename(columns={c_cod: 'Cod. Prod.', 'Buenas': 'Linea OK'}, inplace=True)
+            draw_pdf_table(pdf, df_res, [50, 45, 30, 30, 30], max_rows=40)
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         pdf.output(tmp.name); return open(tmp.name, "rb").read()
