@@ -272,10 +272,8 @@ def get_metrics_pdf(name_filter, df_oee_target):
     return m
 
 def crear_pdf(area, fecha):
-    # CORRECCIÓN DE FECHA: Normalizamos a Timestamp 00:00:00 para asegurar el filtro
-    fecha_target = pd.to_datetime(fecha).normalize()
-    
     # Filtramos por fecha exacta y área
+    fecha_target = pd.to_datetime(fecha).normalize()
     df_pdf = df_raw[(df_raw['Fecha_Filtro'] == fecha_target) & (df_raw['Fábrica'].str.contains(area, case=False))].copy()
     df_oee_pdf = df_oee_raw[df_oee_raw['Fecha_Filtro'] == fecha_target].copy()
     
@@ -288,7 +286,7 @@ def crear_pdf(area, fecha):
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
     
-    # Título y Fecha Registrada
+    # Título y Fecha
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(0, 10, f"Reporte de Indicadores - {area.upper()}", ln=True, align='C')
     pdf.set_font("Arial", size=10)
@@ -300,11 +298,9 @@ def crear_pdf(area, fecha):
     pdf.cell(0, 10, "1. OEE del Área y Máquinas", ln=True)
     pdf.set_font("Arial", 'B', 10)
     
-    # OEE General del Área
     metrics_area = get_metrics_pdf(area, df_oee_pdf)
     pdf.cell(0, 8, f"General {area.upper()} | OEE: {metrics_area['OEE']:.1%} | Disp: {metrics_area['DISP']:.1%} | Perf: {metrics_area['PERF']:.1%} | Calidad: {metrics_area['CAL']:.1%}", ln=True)
     
-    # OEE por Línea/Máquina según el área
     pdf.set_font("Arial", '', 10)
     lineas = ['L1', 'L2', 'L3', 'L4'] if area.upper() == 'ESTAMPADO' else ['CELDA', 'PRP']
     for l in lineas:
@@ -318,10 +314,7 @@ def crear_pdf(area, fecha):
     df_fallas_area = df_pdf[df_pdf['Nivel Evento 3'].astype(str).str.contains('FALLA', case=False)]
     
     if not df_fallas_area.empty:
-        # Gráfico Top 10 Fallas (General del área)
         top_fallas = df_fallas_area.groupby('Nivel Evento 6')['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False).head(10)
-        
-        # Ajustamos el tamaño del gráfico para que no ocupe toda la hoja (width=800, height=350)
         fig_fallas = px.bar(top_fallas, x='Nivel Evento 6', y='Tiempo (Min)', title=f"Top 10 Fallas - {area}", color='Tiempo (Min)', color_continuous_scale='Reds')
         fig_fallas.update_layout(width=800, height=350, margin=dict(t=40, b=20, l=20, r=20))
         
@@ -332,7 +325,7 @@ def crear_pdf(area, fecha):
         
         pdf.ln(5)
         
-        # Tabla Detalle de Fallas Máquina por Máquina
+        # Tabla Detalle de Fallas Máquina por Máquina (Columna AJUSTADA)
         pdf.set_font("Arial", 'B', 11)
         pdf.cell(0, 8, "Detalle de Fallas por Máquina:", ln=True)
         pdf.ln(2)
@@ -345,18 +338,17 @@ def crear_pdf(area, fecha):
             pdf.set_font("Arial", 'B', 9)
             pdf.cell(0, 8, f"-> Máquina: {maq}", ln=True)
             
+            # Encabezados con anchos perfectos para 180mm
             pdf.set_font("Arial", 'B', 8)
-            pdf.cell(20, 8, "Inicio", border=1, align='C')
-            pdf.cell(20, 8, "Fin", border=1, align='C')
-            pdf.cell(80, 8, "Falla", border=1)
-            pdf.cell(20, 8, "Minutos", border=1, align='C')
-            pdf.cell(50, 8, "Levantó la falla", border=1, ln=True)
+            pdf.cell(15, 8, "Inicio", border=1, align='C')
+            pdf.cell(15, 8, "Fin", border=1, align='C')
+            pdf.cell(90, 8, "Falla", border=1)
+            pdf.cell(15, 8, "Min", border=1, align='C')
+            pdf.cell(45, 8, "Levantó la falla", border=1, ln=True)
             
             pdf.set_font("Arial", '', 8)
             df_maq = df_fallas_area[df_fallas_area['Máquina'] == maq]
             
-            # CORRECCIÓN DE LA SUMA DUPLICADA: Ya no agrupamos y sumamos. 
-            # Eliminamos filas duplicadas por si Google Sheets tiene dobles ingresos idénticos.
             cols_dup = [c for c in [col_inicio, col_fin, 'Nivel Evento 6', 'Operador'] if c is not None]
             if cols_dup:
                 df_maq = df_maq.drop_duplicates(subset=cols_dup)
@@ -364,19 +356,21 @@ def crear_pdf(area, fecha):
             df_maq = df_maq.sort_values('Tiempo (Min)', ascending=False)
             
             for _, row in df_maq.iterrows():
-                val_inicio = str(row[col_inicio]) if col_inicio and str(row[col_inicio]) != 'nan' else "-"
-                val_fin = str(row[col_fin]) if col_fin and str(row[col_fin]) != 'nan' else "-"
+                # Cortamos a 5 caracteres (HH:MM) para no ocupar espacio valioso
+                val_inicio = str(row[col_inicio])[:5] if col_inicio and str(row[col_inicio]) != 'nan' else "-"
+                val_fin = str(row[col_fin])[:5] if col_fin and str(row[col_fin]) != 'nan' else "-"
                 
-                pdf.cell(20, 8, val_inicio[:8], border=1, align='C')
-                pdf.cell(20, 8, val_fin[:8], border=1, align='C')
-                pdf.cell(80, 8, str(row['Nivel Evento 6'])[:40], border=1)
-                pdf.cell(20, 8, f"{row['Tiempo (Min)']:.1f}", border=1, align='C')
-                pdf.cell(50, 8, str(row['Operador'])[:25], border=1, ln=True)
+                pdf.cell(15, 8, val_inicio, border=1, align='C')
+                pdf.cell(15, 8, val_fin, border=1, align='C')
+                # Aumentamos límite de caracteres para que se lean completas
+                pdf.cell(90, 8, str(row['Nivel Evento 6'])[:60], border=1)
+                pdf.cell(15, 8, f"{row['Tiempo (Min)']:.1f}", border=1, align='C')
+                pdf.cell(45, 8, str(row['Operador'])[:30], border=1, ln=True)
             pdf.ln(3) 
             
-    pdf.ln(5) # Fluimos a la siguiente sección sin forzar salto
+    pdf.ln(5)
     
-    # 3. PRODUCCIÓN VS PARADA (Con Colores y Tamaño Reducido)
+    # 3. PRODUCCIÓN VS PARADA
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, "3. Relación Producción vs Parada", ln=True)
     if not df_pdf.empty:
@@ -404,7 +398,7 @@ def crear_pdf(area, fecha):
             os.remove(tmpfile3.name)
             
         pdf.ln(5)
-        # Tabla de Producción
+        # Tabla de Producción (AJUSTADA 180mm)
         pdf.set_font("Arial", 'B', 10)
         pdf.cell(0, 8, "Desglose por Código de Producto:", ln=True)
         pdf.set_font("Arial", 'B', 8)
@@ -420,8 +414,8 @@ def crear_pdf(area, fecha):
         
         df_prod_group = df_prod_pdf.groupby(['Máquina', c_cod])[['Buenas', 'Retrabajo', 'Observadas']].sum().reset_index().sort_values('Máquina')
         for _, row in df_prod_group.iterrows():
-            pdf.cell(40, 8, str(row['Máquina'])[:20], border=1)
-            pdf.cell(60, 8, str(row[c_cod])[:30], border=1)
+            pdf.cell(40, 8, str(row['Máquina'])[:25], border=1)
+            pdf.cell(60, 8, str(row[c_cod])[:40], border=1) # Más espacio para el código de producto
             pdf.cell(25, 8, str(int(row['Buenas'])), border=1, align='C')
             pdf.cell(25, 8, str(int(row['Retrabajo'])), border=1, align='C')
             pdf.cell(30, 8, str(int(row['Observadas'])), border=1, align='C', ln=True)
