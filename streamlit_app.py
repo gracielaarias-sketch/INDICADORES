@@ -275,6 +275,7 @@ def get_metrics_pdf(name_filter, df_oee_target):
 
 def crear_pdf(area, fecha):
     fecha_target = pd.to_datetime(fecha).normalize()
+    
     # Filtrar datos principales por fecha y área
     df_pdf = df_raw[(df_raw['Fecha_Filtro'] == fecha_target) & (df_raw['Fábrica'].str.contains(area, case=False))].copy()
     df_oee_pdf = df_oee_raw[df_oee_raw['Fecha_Filtro'] == fecha_target].copy()
@@ -285,7 +286,7 @@ def crear_pdf(area, fecha):
         df_prod_pdf = df_prod_raw[(df_prod_raw['Fecha_Filtro'] == fecha_target) & 
                                   (df_prod_raw['Máquina'].str.contains(area, case=False) | df_prod_raw['Máquina'].isin(df_pdf['Máquina'].unique()))].copy()
     
-    # Filtrar operarios para el día seleccionado
+    # Filtrar operarios (sin restricción de área para la tabla de Performance general)
     df_op_pdf = pd.DataFrame()
     if not df_operarios_raw.empty:
         df_op_pdf = df_operarios_raw[df_operarios_raw['Fecha_Filtro'] == fecha_target].copy()
@@ -446,38 +447,13 @@ def crear_pdf(area, fecha):
 
     pdf.ln(5)
 
-    # 5. TIEMPOS Y PERFORMANCE POR OPERARIO
+    # 5. TIEMPOS POR OPERARIO
     pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, clean_text("5. Tiempos y Performance por Operario"), ln=True)
+    pdf.cell(0, 10, clean_text("5. Tiempos por Operario"), ln=True)
     if not df_pdf.empty:
-        op_tiempos = df_pdf.groupby('Operador')['Tiempo (Min)'].sum().reset_index()
+        op_tiempos = df_pdf.groupby('Operador')['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False)
         
-        # CRUZAR PERFORMANCE CON NOMBRES EXACTOS (Sólo se limpian espacios extremos)
-        if not df_op_pdf.empty:
-            c_op_name = next((c for c in df_op_pdf.columns if 'operador' in c.lower() or 'nombre' in c.lower()), None)
-            c_perf = next((c for c in df_op_pdf.columns if 'performance' in c.lower()), None)
-            
-            if c_op_name and c_perf:
-                op_tiempos['Op_Clean'] = op_tiempos['Operador'].astype(str).str.strip()
-                df_op_temp = df_op_pdf.copy()
-                df_op_temp['Op_Clean'] = df_op_temp[c_op_name].astype(str).str.strip()
-                
-                # En caso de duplicados, tomamos el valor máximo
-                df_op_temp[c_perf] = pd.to_numeric(df_op_temp[c_perf], errors='coerce').fillna(0.0)
-                perf_agg = df_op_temp.groupby('Op_Clean')[c_perf].max().reset_index()
-                
-                op_merged = pd.merge(op_tiempos, perf_agg, on='Op_Clean', how='left')
-                op_merged['Performance_Final'] = op_merged[c_perf].fillna(0.0)
-            else:
-                op_merged = op_tiempos
-                op_merged['Performance_Final'] = 0.0
-        else:
-             op_merged = op_tiempos
-             op_merged['Performance_Final'] = 0.0
-
-        op_merged = op_merged.sort_values('Tiempo (Min)', ascending=False)
-
-        fig_op = px.bar(op_merged, x='Operador', y='Tiempo (Min)', color='Tiempo (Min)', color_continuous_scale='Blues', text='Tiempo (Min)')
+        fig_op = px.bar(op_tiempos, x='Operador', y='Tiempo (Min)', color='Tiempo (Min)', color_continuous_scale='Blues', text='Tiempo (Min)')
         fig_op.update_traces(texttemplate='%{text:.1f}', textposition='outside', cliponaxis=False)
         fig_op.update_layout(width=800, height=450, margin=dict(t=80, b=150, l=40, r=40))
         
@@ -488,23 +464,56 @@ def crear_pdf(area, fecha):
             
         pdf.ln(5)
         
-        # TABLA RESUMEN CON PERFORMANCE
+        # Tabla resumen (solo tiempos)
         pdf.set_font("Arial", 'B', 10)
-        pdf.cell(0, 8, clean_text("Tabla Resumen de Operarios (Tiempo y Performance):"), ln=True)
+        pdf.cell(0, 8, clean_text("Resumen de Tiempos:"), ln=True)
         pdf.set_font("Arial", 'B', 8)
         
-        pdf.cell(70, 8, clean_text("Operador"), border=1)
-        pdf.cell(40, 8, clean_text("Tiempo Total (Min)"), border=1, align='C')
-        pdf.cell(40, 8, clean_text("Performance"), border=1, align='C', ln=True)
+        pdf.cell(100, 8, clean_text("Operador"), border=1)
+        pdf.cell(50, 8, clean_text("Tiempo Total (Min)"), border=1, align='C', ln=True)
         
         pdf.set_font("Arial", '', 8)
-        for _, row in op_merged.iterrows():
-            perf_val = row['Performance_Final']
-            
-            pdf.cell(70, 8, clean_text(str(row['Operador'])[:35]), border=1)
-            pdf.cell(40, 8, clean_text(f"{row['Tiempo (Min)']:.1f}"), border=1, align='C')
-            pdf.cell(40, 8, clean_text(f"{perf_val:.2f}"), border=1, align='C', ln=True)
+        for _, row in op_tiempos.iterrows():
+            pdf.cell(100, 8, clean_text(str(row['Operador'])[:50]), border=1)
+            pdf.cell(50, 8, clean_text(f"{row['Tiempo (Min)']:.1f}"), border=1, align='C', ln=True)
 
+    pdf.ln(5)
+    
+    # =========================================================
+    # 6. TABLA INDEPENDIENTE: PERFORMANCE GENERAL DE OPERARIOS
+    # =========================================================
+    pdf.add_page() # Lo enviamos a una página limpia para no agolpar datos
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 10, clean_text("6. Performance de Operarios (Día Seleccionado)"), ln=True)
+    
+    if not df_op_pdf.empty:
+        c_op_name = next((c for c in df_op_pdf.columns if 'operador' in c.lower() or 'nombre' in c.lower()), None)
+        c_perf = next((c for c in df_op_pdf.columns if 'performance' in c.lower()), None)
+        
+        if c_op_name and c_perf:
+            # Ordenamos alfabéticamente a los operarios
+            df_op_print = df_op_pdf.sort_values(c_op_name)
+            
+            pdf.set_font("Arial", 'B', 10)
+            pdf.cell(120, 8, clean_text("Operador"), border=1)
+            pdf.cell(60, 8, clean_text("Performance"), border=1, align='C', ln=True)
+            
+            pdf.set_font("Arial", '', 10)
+            for _, row in df_op_print.iterrows():
+                # Convertimos y formateamos para evitar errores de impresión
+                perf_val = pd.to_numeric(row[c_perf], errors='coerce')
+                perf_str = f"{perf_val:.2f}" if pd.notna(perf_val) else "-"
+                
+                pdf.cell(120, 8, clean_text(str(row[c_op_name])[:60]), border=1)
+                pdf.cell(60, 8, clean_text(perf_str), border=1, align='C', ln=True)
+        else:
+            pdf.set_font("Arial", '', 10)
+            pdf.cell(0, 8, clean_text("No se encontraron columnas de Operador/Performance en la base de datos."), ln=True)
+    else:
+        pdf.set_font("Arial", '', 10)
+        pdf.cell(0, 8, clean_text("No hay registros de performance para el día seleccionado."), ln=True)
+
+    # FINALIZAR Y GUARDAR PDF
     temp_pdf = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
     pdf.output(temp_pdf.name)
     with open(temp_pdf.name, "rb") as f:
