@@ -17,7 +17,6 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    [data-testid="stMetricValue"] { font-size: 24px; }
     .stTabs [data-baseweb="tab-list"] { gap: 10px; }
     hr { margin-top: 2rem; margin-bottom: 2rem; }
 </style>
@@ -102,7 +101,7 @@ if isinstance(rango, (list, tuple)) and len(rango) == 2:
 else: st.stop()
 
 # ==========================================
-# 4. FUNCIONES KPI
+# 4. FUNCIONES KPI (CON COLORES)
 # ==========================================
 def get_metrics(name_filter):
     m = {'OEE': 0.0, 'DISP': 0.0, 'PERF': 0.0, 'CAL': 0.0}
@@ -119,12 +118,27 @@ def get_metrics(name_filter):
                     m[key] = float(v/100 if v > 1.1 else v)
     return m
 
+# Funciones de color para Dashboard
+def get_color_hex(val):
+    if val < 0.85: return "#E02020" # Rojo
+    elif val <= 0.95: return "#D4A000" # Amarillo oscuro / Mostaza (para ser visible)
+    else: return "#21C354" # Verde
+
+def render_metric_html(label, val):
+    color = get_color_hex(val)
+    return f"""
+    <div style="line-height: 1.2; margin-bottom: 1rem;">
+        <span style="font-size: 14px; color: gray;">{label}</span><br>
+        <span style="font-size: 28px; font-weight: bold; color: {color};">{val:.1%}</span>
+    </div>
+    """
+
 def show_metric_row(m):
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("OEE", f"{m['OEE']:.1%}")
-    c2.metric("Disponibilidad", f"{m['DISP']:.1%}")
-    c3.metric("Performance", f"{m['PERF']:.1%}")
-    c4.metric("Calidad", f"{m['CAL']:.1%}")
+    c1.markdown(render_metric_html("OEE", m['OEE']), unsafe_allow_html=True)
+    c2.markdown(render_metric_html("Disponibilidad", m['DISP']), unsafe_allow_html=True)
+    c3.markdown(render_metric_html("Performance", m['PERF']), unsafe_allow_html=True)
+    c4.markdown(render_metric_html("Calidad", m['CAL']), unsafe_allow_html=True)
 
 def show_historical_oee(filter_name, title):
     if not df_oee_f.empty:
@@ -273,20 +287,52 @@ def get_metrics_pdf(name_filter, df_oee_target):
                     m[key] = float(v/100 if v > 1.1 else v)
     return m
 
+# Funciones de color para FPDF
+def set_pdf_color(pdf, val):
+    if val < 0.85:
+        pdf.set_text_color(220, 20, 20) # Rojo
+    elif val <= 0.95:
+        pdf.set_text_color(200, 150, 0) # Amarillo Mostaza
+    else:
+        pdf.set_text_color(33, 195, 84) # Verde
+
+def print_pdf_metric_row(pdf, prefix, m):
+    pdf.set_font("Arial", 'B', 10)
+    pdf.set_text_color(0, 0, 0)
+    pdf.write(6, clean_text(f"{prefix} | OEE: "))
+    
+    set_pdf_color(pdf, m['OEE'])
+    pdf.write(6, f"{m['OEE']:.1%}")
+    
+    pdf.set_text_color(0, 0, 0)
+    pdf.write(6, clean_text(" | Disp: "))
+    set_pdf_color(pdf, m['DISP'])
+    pdf.write(6, f"{m['DISP']:.1%}")
+    
+    pdf.set_text_color(0, 0, 0)
+    pdf.write(6, clean_text(" | Perf: "))
+    set_pdf_color(pdf, m['PERF'])
+    pdf.write(6, f"{m['PERF']:.1%}")
+    
+    pdf.set_text_color(0, 0, 0)
+    pdf.write(6, clean_text(" | Calidad: "))
+    set_pdf_color(pdf, m['CAL'])
+    pdf.write(6, f"{m['CAL']:.1%}")
+    
+    pdf.set_text_color(0, 0, 0)
+    pdf.ln(6)
+
 def crear_pdf(area, fecha):
     fecha_target = pd.to_datetime(fecha).normalize()
     
-    # Filtrar datos principales por fecha y área
     df_pdf = df_raw[(df_raw['Fecha_Filtro'] == fecha_target) & (df_raw['Fábrica'].str.contains(area, case=False))].copy()
     df_oee_pdf = df_oee_raw[df_oee_raw['Fecha_Filtro'] == fecha_target].copy()
     
-    # Filtrar producción
     df_prod_pdf = pd.DataFrame()
     if not df_prod_raw.empty:
         df_prod_pdf = df_prod_raw[(df_prod_raw['Fecha_Filtro'] == fecha_target) & 
                                   (df_prod_raw['Máquina'].str.contains(area, case=False) | df_prod_raw['Máquina'].isin(df_pdf['Máquina'].unique()))].copy()
     
-    # Filtrar operarios (sin restricción de área para la tabla de Performance general)
     df_op_pdf = pd.DataFrame()
     if not df_operarios_raw.empty:
         df_op_pdf = df_operarios_raw[df_operarios_raw['Fecha_Filtro'] == fecha_target].copy()
@@ -301,15 +347,13 @@ def crear_pdf(area, fecha):
     pdf.cell(0, 10, clean_text(f"Fecha del Reporte: {fecha.strftime('%d-%m-%Y')}"), ln=True, align='C')
     pdf.ln(5)
 
-    # 1. OEE DEL ÁREA Y MÁQUINAS
+    # 1. OEE DEL ÁREA Y MÁQUINAS (CON COLORES)
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, clean_text("1. Resumen General y OEE"), ln=True)
-    pdf.set_font("Arial", 'B', 10)
     
     metrics_area = get_metrics_pdf(area, df_oee_pdf)
-    pdf.cell(0, 8, clean_text(f"General {area.upper()} | OEE: {metrics_area['OEE']:.1%} | Disp: {metrics_area['DISP']:.1%} | Perf: {metrics_area['PERF']:.1%} | Calidad: {metrics_area['CAL']:.1%}"), ln=True)
+    print_pdf_metric_row(pdf, f"General {area.upper()}", metrics_area)
     
-    # PROMEDIOS BAÑO Y REFRIGERIO
     pdf.ln(2)
     pdf.set_font("Arial", 'B', 10)
     pdf.cell(0, 6, clean_text("Tiempos Promedio (por registro):"), ln=True)
@@ -330,11 +374,10 @@ def crear_pdf(area, fecha):
 
     pdf.set_font("Arial", 'B', 10)
     pdf.cell(0, 6, clean_text("Detalle OEE por Máquina/Línea:"), ln=True)
-    pdf.set_font("Arial", '', 10)
     lineas = ['L1', 'L2', 'L3', 'L4'] if area.upper() == 'ESTAMPADO' else ['CELDA', 'PRP']
     for l in lineas:
         m_l = get_metrics_pdf(l, df_oee_pdf)
-        pdf.cell(0, 6, clean_text(f"   -> {l}  -  OEE: {m_l['OEE']:.1%} | Disp: {m_l['DISP']:.1%} | Perf: {m_l['PERF']:.1%} | Calidad: {m_l['CAL']:.1%}"), ln=True)
+        print_pdf_metric_row(pdf, f"   -> {l} ", m_l)
     pdf.ln(5)
 
     # 2. ANÁLISIS DE FALLAS
@@ -482,7 +525,7 @@ def crear_pdf(area, fecha):
     # =========================================================
     # 6. TABLA INDEPENDIENTE: PERFORMANCE GENERAL DE OPERARIOS
     # =========================================================
-    pdf.ln(5) # Sin salto de página, fluye natural
+    pdf.ln(5)
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, clean_text("6. Performance de Operarios (Día Seleccionado)"), ln=True)
     
