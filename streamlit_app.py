@@ -254,7 +254,7 @@ fecha_pdf = st.sidebar.date_input(
     key="pdf_date_filter"
 )
 
-# FUNCIÓN PARA LIMPIAR TEXTOS (Evita que FPDF borre o corte caracteres extraños)
+# FUNCIÓN PARA LIMPIAR TEXTOS
 def clean_text(text):
     if pd.isna(text): return "-"
     return str(text).encode('latin-1', 'replace').decode('latin-1')
@@ -317,10 +317,10 @@ def crear_pdf(area, fecha):
     if not df_fallas_area.empty:
         top_fallas = df_fallas_area.groupby('Nivel Evento 6')['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False).head(10)
         
-        # GRAFICO CON ETIQUETAS DE DATOS
+        # CORREGIDO: cliponaxis en update_traces
         fig_fallas = px.bar(top_fallas, x='Nivel Evento 6', y='Tiempo (Min)', title=f"Top 10 Fallas - {area}", color='Tiempo (Min)', color_continuous_scale='Reds', text='Tiempo (Min)')
-        fig_fallas.update_traces(texttemplate='%{text:.1f}', textposition='outside')
-        fig_fallas.update_layout(width=800, height=350, margin=dict(t=40, b=20, l=20, r=20), cliponaxis=False)
+        fig_fallas.update_traces(texttemplate='%{text:.1f}', textposition='outside', cliponaxis=False)
+        fig_fallas.update_layout(width=800, height=350, margin=dict(t=40, b=20, l=20, r=20))
         
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
             fig_fallas.write_image(tmpfile.name, engine="kaleido")
@@ -388,7 +388,7 @@ def crear_pdf(area, fecha):
     if not df_prod_pdf.empty and 'Buenas' in df_prod_pdf.columns:
         prod_maq = df_prod_pdf.groupby('Máquina')[['Buenas', 'Retrabajo', 'Observadas']].sum().reset_index()
         
-        # GRAFICO CON ETIQUETAS DE DATOS (Auto)
+        # GRAFICO CON ETIQUETAS
         fig_prod = px.bar(prod_maq, x='Máquina', y=['Buenas', 'Retrabajo', 'Observadas'], barmode='stack', color_discrete_sequence=['#1F77B4', '#FF7F0E', '#d62728'], text_auto=True)
         fig_prod.update_layout(width=800, height=350, margin=dict(t=40, b=20, l=20, r=20))
         
@@ -427,10 +427,10 @@ def crear_pdf(area, fecha):
     if not df_pdf.empty:
         op_tiempos = df_pdf.groupby('Operador')['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False)
         
-        # GRAFICO CON ETIQUETAS DE DATOS
+        # CORREGIDO: cliponaxis en update_traces
         fig_op = px.bar(op_tiempos, x='Operador', y='Tiempo (Min)', color='Tiempo (Min)', color_continuous_scale='Blues', text='Tiempo (Min)')
-        fig_op.update_traces(texttemplate='%{text:.1f}', textposition='outside')
-        fig_op.update_layout(width=800, height=350, margin=dict(t=40, b=20, l=20, r=20), cliponaxis=False)
+        fig_op.update_traces(texttemplate='%{text:.1f}', textposition='outside', cliponaxis=False)
+        fig_op.update_layout(width=800, height=350, margin=dict(t=40, b=20, l=20, r=20))
         
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile4:
             fig_op.write_image(tmpfile4.name, engine="kaleido")
