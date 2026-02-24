@@ -254,7 +254,6 @@ fecha_pdf = st.sidebar.date_input(
     key="pdf_date_filter"
 )
 
-# FUNCIÓN PARA LIMPIAR TEXTOS
 def clean_text(text):
     if pd.isna(text): return "-"
     return str(text).encode('latin-1', 'replace').decode('latin-1')
@@ -286,7 +285,7 @@ def crear_pdf(area, fecha):
         df_prod_pdf = df_prod_raw[(df_prod_raw['Fecha_Filtro'] == fecha_target) & 
                                   (df_prod_raw['Máquina'].str.contains(area, case=False) | df_prod_raw['Máquina'].isin(df_pdf['Máquina'].unique()))].copy()
     
-    # Filtrar operarios para el día seleccionado (para obtener performance cruda)
+    # Filtrar operarios para el día seleccionado
     df_op_pdf = pd.DataFrame()
     if not df_operarios_raw.empty:
         df_op_pdf = df_operarios_raw[df_operarios_raw['Fecha_Filtro'] == fecha_target].copy()
@@ -345,10 +344,10 @@ def crear_pdf(area, fecha):
     if not df_fallas_area.empty:
         top_fallas = df_fallas_area.groupby('Nivel Evento 6')['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False).head(10)
         
-        # MÁRGENES AUMENTADOS Y HEIGHT=400 PARA DAR MÁS ESPACIO A LAS ETIQUETAS
+        # MARGEN INFERIOR AUMENTADO A 150 PARA EVITAR CORTE DE TEXTO
         fig_fallas = px.bar(top_fallas, x='Nivel Evento 6', y='Tiempo (Min)', title=f"Top 10 Fallas - {area}", color='Tiempo (Min)', color_continuous_scale='Reds', text='Tiempo (Min)')
         fig_fallas.update_traces(texttemplate='%{text:.1f}', textposition='outside', cliponaxis=False)
-        fig_fallas.update_layout(width=800, height=400, margin=dict(t=120, b=80, l=40, r=60))
+        fig_fallas.update_layout(width=800, height=450, margin=dict(t=80, b=150, l=40, r=40))
         
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
             fig_fallas.write_image(tmpfile.name, engine="kaleido")
@@ -416,9 +415,9 @@ def crear_pdf(area, fecha):
     if not df_prod_pdf.empty and 'Buenas' in df_prod_pdf.columns:
         prod_maq = df_prod_pdf.groupby('Máquina')[['Buenas', 'Retrabajo', 'Observadas']].sum().reset_index()
         
-        # MÁRGENES AUMENTADOS
+        # MARGEN INFERIOR AUMENTADO A 150
         fig_prod = px.bar(prod_maq, x='Máquina', y=['Buenas', 'Retrabajo', 'Observadas'], barmode='stack', color_discrete_sequence=['#1F77B4', '#FF7F0E', '#d62728'], text_auto=True)
-        fig_prod.update_layout(width=800, height=400, margin=dict(t=120, b=80, l=40, r=60))
+        fig_prod.update_layout(width=800, height=450, margin=dict(t=60, b=150, l=40, r=40))
         
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile3:
             fig_prod.write_image(tmpfile3.name, engine="kaleido")
@@ -455,13 +454,21 @@ def crear_pdf(area, fecha):
     if not df_pdf.empty:
         op_tiempos = df_pdf.groupby('Operador')['Tiempo (Min)'].sum().reset_index()
         
-        # PERFORMANCE CRUDA DESDE df_operarios_raw
+        # CRUZAR PERFORMANCE CON LIMPIEZA DE ESPACIOS Y MAYÚSCULAS PARA EVITAR 0.00
         if not df_op_pdf.empty:
             c_op_name = next((c for c in df_op_pdf.columns if 'operador' in c.lower() or 'nombre' in c.lower()), None)
             c_perf = next((c for c in df_op_pdf.columns if 'performance' in c.lower()), None)
             
             if c_op_name and c_perf:
-                op_merged = pd.merge(op_tiempos, df_op_pdf[[c_op_name, c_perf]], left_on='Operador', right_on=c_op_name, how='left')
+                # Normalizamos nombres (quitar espacios y pasar a mayúscula)
+                op_tiempos['Key'] = op_tiempos['Operador'].astype(str).str.strip().str.upper()
+                df_op_temp = df_op_pdf.copy()
+                df_op_temp['Key'] = df_op_temp[c_op_name].astype(str).str.strip().str.upper()
+                
+                # Eliminamos duplicados por si el operario fichó varias veces
+                df_op_temp = df_op_temp.drop_duplicates(subset=['Key'])
+                
+                op_merged = pd.merge(op_tiempos, df_op_temp[['Key', c_perf]], on='Key', how='left')
                 op_merged['Performance_Final'] = pd.to_numeric(op_merged[c_perf], errors='coerce').fillna(0.0)
             else:
                 op_merged = op_tiempos
@@ -472,10 +479,10 @@ def crear_pdf(area, fecha):
 
         op_merged = op_merged.sort_values('Tiempo (Min)', ascending=False)
 
-        # MÁRGENES AUMENTADOS
+        # MARGEN INFERIOR AUMENTADO A 150
         fig_op = px.bar(op_merged, x='Operador', y='Tiempo (Min)', color='Tiempo (Min)', color_continuous_scale='Blues', text='Tiempo (Min)')
         fig_op.update_traces(texttemplate='%{text:.1f}', textposition='outside', cliponaxis=False)
-        fig_op.update_layout(width=800, height=400, margin=dict(t=120, b=80, l=40, r=60))
+        fig_op.update_layout(width=800, height=450, margin=dict(t=80, b=150, l=40, r=40))
         
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile4:
             fig_op.write_image(tmpfile4.name, engine="kaleido")
@@ -484,7 +491,7 @@ def crear_pdf(area, fecha):
             
         pdf.ln(5)
         
-        # TABLA RESUMEN CON PERFORMANCE (SÓLO NÚMERO DECIMAL)
+        # TABLA RESUMEN CON PERFORMANCE
         pdf.set_font("Arial", 'B', 10)
         pdf.cell(0, 8, clean_text("Tabla Resumen de Operarios (Tiempo y Performance):"), ln=True)
         pdf.set_font("Arial", 'B', 8)
@@ -495,11 +502,11 @@ def crear_pdf(area, fecha):
         
         pdf.set_font("Arial", '', 8)
         for _, row in op_merged.iterrows():
-            # Imprime exactamente el número almacenado en la columna, a dos decimales, sin multiplicar ni agregar %
             perf_val = row['Performance_Final']
             
             pdf.cell(70, 8, clean_text(str(row['Operador'])[:35]), border=1)
             pdf.cell(40, 8, clean_text(f"{row['Tiempo (Min)']:.1f}"), border=1, align='C')
+            # Imprime el valor de Google Sheets con dos decimales exactos
             pdf.cell(40, 8, clean_text(f"{perf_val:.2f}"), border=1, align='C', ln=True)
 
     temp_pdf = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
