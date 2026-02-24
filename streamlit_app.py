@@ -1,3 +1,12 @@
+¡Entendido! Vamos a hacer esos dos ajustes con precisión quirúrgica:
+
+Aumento de márgenes: Le daremos un margen superior (t=120) y ajustaremos la altura general de los gráficos a height=400 para asegurarnos de que el número que está por encima de la barra más alta tenga espacio de sobra para "respirar" y no salga cortado en el PNG final.
+
+Performance cruda: Quité toda la lógica matemática de conversión a porcentaje. Ahora tomará el valor exacto de la pestaña operarios (df_operarios_raw), forzará que sea numérico para evitar errores y lo imprimirá tal cual con dos decimales (por ejemplo, 0.85 o 85.50 según como venga de Google Sheets).
+
+Aquí tienes el código completo con estas correcciones implementadas:
+
+Python
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -286,7 +295,7 @@ def crear_pdf(area, fecha):
         df_prod_pdf = df_prod_raw[(df_prod_raw['Fecha_Filtro'] == fecha_target) & 
                                   (df_prod_raw['Máquina'].str.contains(area, case=False) | df_prod_raw['Máquina'].isin(df_pdf['Máquina'].unique()))].copy()
     
-    # Filtrar operarios para el día seleccionado (para obtener performance)
+    # Filtrar operarios para el día seleccionado (para obtener performance cruda)
     df_op_pdf = pd.DataFrame()
     if not df_operarios_raw.empty:
         df_op_pdf = df_operarios_raw[df_operarios_raw['Fecha_Filtro'] == fecha_target].copy()
@@ -309,18 +318,16 @@ def crear_pdf(area, fecha):
     metrics_area = get_metrics_pdf(area, df_oee_pdf)
     pdf.cell(0, 8, clean_text(f"General {area.upper()} | OEE: {metrics_area['OEE']:.1%} | Disp: {metrics_area['DISP']:.1%} | Perf: {metrics_area['PERF']:.1%} | Calidad: {metrics_area['CAL']:.1%}"), ln=True)
     
-    # --- NUEVO: PROMEDIOS BAÑO Y REFRIGERIO ---
+    # PROMEDIOS BAÑO Y REFRIGERIO
     pdf.ln(2)
     pdf.set_font("Arial", 'B', 10)
     pdf.cell(0, 6, clean_text("Tiempos Promedio (por registro):"), ln=True)
     pdf.set_font("Arial", '', 10)
     
     if not df_pdf.empty:
-        # Calcular promedios sobre los datos filtrados del área y fecha
         avg_bano = df_pdf[df_pdf['Nivel Evento 4'].astype(str).str.contains('Baño', case=False, na=False)]['Tiempo (Min)'].mean()
         avg_refr = df_pdf[df_pdf['Nivel Evento 4'].astype(str).str.contains('Refrigerio', case=False, na=False)]['Tiempo (Min)'].mean()
         
-        # Manejar casos donde no haya registros (NaN)
         avg_bano_str = f"{avg_bano:.1f} min" if not pd.isna(avg_bano) else "Sin registros"
         avg_refr_str = f"{avg_refr:.1f} min" if not pd.isna(avg_refr) else "Sin registros"
         
@@ -329,7 +336,6 @@ def crear_pdf(area, fecha):
     else:
          pdf.cell(0, 6, clean_text("   -> Sin datos de tiempos para el área seleccionada."), ln=True)
     pdf.ln(3)
-    # ------------------------------------------
 
     pdf.set_font("Arial", 'B', 10)
     pdf.cell(0, 6, clean_text("Detalle OEE por Máquina/Línea:"), ln=True)
@@ -348,10 +354,10 @@ def crear_pdf(area, fecha):
     if not df_fallas_area.empty:
         top_fallas = df_fallas_area.groupby('Nivel Evento 6')['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False).head(10)
         
-        # CORREGIDO: Márgenes aumentados (t=80, b=60, r=40) para evitar cortes
+        # MÁRGENES AUMENTADOS Y HEIGHT=400 PARA DAR MÁS ESPACIO A LAS ETIQUETAS
         fig_fallas = px.bar(top_fallas, x='Nivel Evento 6', y='Tiempo (Min)', title=f"Top 10 Fallas - {area}", color='Tiempo (Min)', color_continuous_scale='Reds', text='Tiempo (Min)')
         fig_fallas.update_traces(texttemplate='%{text:.1f}', textposition='outside', cliponaxis=False)
-        fig_fallas.update_layout(width=800, height=400, margin=dict(t=80, b=60, l=20, r=40))
+        fig_fallas.update_layout(width=800, height=400, margin=dict(t=120, b=80, l=40, r=60))
         
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
             fig_fallas.write_image(tmpfile.name, engine="kaleido")
@@ -405,7 +411,6 @@ def crear_pdf(area, fecha):
     if not df_pdf.empty:
         df_pdf['Tipo'] = df_pdf['Evento'].apply(lambda x: 'Producción' if 'Producción' in str(x) else 'Parada')
         fig_pie = px.pie(df_pdf, values='Tiempo (Min)', names='Tipo', hole=0.4, color='Tipo', color_discrete_map={'Producción':'#2CA02C', 'Parada':'#D62728'})
-        # El gráfico circular usualmente no necesita tanto margen
         fig_pie.update_layout(width=500, height=350, margin=dict(t=30, b=20, l=20, r=20))
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile2:
             fig_pie.write_image(tmpfile2.name, engine="kaleido")
@@ -420,9 +425,9 @@ def crear_pdf(area, fecha):
     if not df_prod_pdf.empty and 'Buenas' in df_prod_pdf.columns:
         prod_maq = df_prod_pdf.groupby('Máquina')[['Buenas', 'Retrabajo', 'Observadas']].sum().reset_index()
         
-        # CORREGIDO: Márgenes aumentados (t=60, b=50)
+        # MÁRGENES AUMENTADOS
         fig_prod = px.bar(prod_maq, x='Máquina', y=['Buenas', 'Retrabajo', 'Observadas'], barmode='stack', color_discrete_sequence=['#1F77B4', '#FF7F0E', '#d62728'], text_auto=True)
-        fig_prod.update_layout(width=800, height=350, margin=dict(t=60, b=50, l=20, r=20))
+        fig_prod.update_layout(width=800, height=400, margin=dict(t=120, b=80, l=40, r=60))
         
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile3:
             fig_prod.write_image(tmpfile3.name, engine="kaleido")
@@ -457,19 +462,15 @@ def crear_pdf(area, fecha):
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, clean_text("5. Tiempos y Performance por Operario"), ln=True)
     if not df_pdf.empty:
-        # 1. Calcular tiempos totales (Datos del área actual)
         op_tiempos = df_pdf.groupby('Operador')['Tiempo (Min)'].sum().reset_index()
         
-        # 2. Cruzar con datos de performance (Datos de la pestaña operarios para la fecha)
+        # PERFORMANCE CRUDA DESDE df_operarios_raw
         if not df_op_pdf.empty:
-            # Buscar columnas de nombre y performance dinámicamente
             c_op_name = next((c for c in df_op_pdf.columns if 'operador' in c.lower() or 'nombre' in c.lower()), None)
             c_perf = next((c for c in df_op_pdf.columns if 'performance' in c.lower()), None)
             
             if c_op_name and c_perf:
-                # Merge (Left join para mantener todos los que tuvieron tiempo en el área)
                 op_merged = pd.merge(op_tiempos, df_op_pdf[[c_op_name, c_perf]], left_on='Operador', right_on=c_op_name, how='left')
-                # Limpiar performance a numérico
                 op_merged['Performance_Final'] = pd.to_numeric(op_merged[c_perf], errors='coerce').fillna(0.0)
             else:
                 op_merged = op_tiempos
@@ -480,10 +481,10 @@ def crear_pdf(area, fecha):
 
         op_merged = op_merged.sort_values('Tiempo (Min)', ascending=False)
 
-        # GRAFICO DE TIEMPOS (Corregido márgenes t=60, b=60)
+        # MÁRGENES AUMENTADOS
         fig_op = px.bar(op_merged, x='Operador', y='Tiempo (Min)', color='Tiempo (Min)', color_continuous_scale='Blues', text='Tiempo (Min)')
         fig_op.update_traces(texttemplate='%{text:.1f}', textposition='outside', cliponaxis=False)
-        fig_op.update_layout(width=800, height=350, margin=dict(t=60, b=60, l=20, r=20))
+        fig_op.update_layout(width=800, height=400, margin=dict(t=120, b=80, l=40, r=60))
         
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile4:
             fig_op.write_image(tmpfile4.name, engine="kaleido")
@@ -492,25 +493,23 @@ def crear_pdf(area, fecha):
             
         pdf.ln(5)
         
-        # --- NUEVO: TABLA RESUMEN CON PERFORMANCE ---
+        # TABLA RESUMEN CON PERFORMANCE (SÓLO NÚMERO DECIMAL)
         pdf.set_font("Arial", 'B', 10)
         pdf.cell(0, 8, clean_text("Tabla Resumen de Operarios (Tiempo y Performance):"), ln=True)
         pdf.set_font("Arial", 'B', 8)
         
         pdf.cell(70, 8, clean_text("Operador"), border=1)
         pdf.cell(40, 8, clean_text("Tiempo Total (Min)"), border=1, align='C')
-        pdf.cell(40, 8, clean_text("Performance (%)"), border=1, align='C', ln=True)
+        pdf.cell(40, 8, clean_text("Performance"), border=1, align='C', ln=True)
         
         pdf.set_font("Arial", '', 8)
         for _, row in op_merged.iterrows():
+            # Imprime exactamente el número almacenado en la columna, a dos decimales, sin multiplicar ni agregar %
             perf_val = row['Performance_Final']
-            # Si la performance es decimal (ej 0.85), multiplicar por 100. Si ya es entera (ej 85), dejarla.
-            if perf_val <= 1.5 and perf_val > 0: perf_val *= 100
             
             pdf.cell(70, 8, clean_text(str(row['Operador'])[:35]), border=1)
             pdf.cell(40, 8, clean_text(f"{row['Tiempo (Min)']:.1f}"), border=1, align='C')
-            pdf.cell(40, 8, clean_text(f"{perf_val:.1f}%"), border=1, align='C', ln=True)
-        # ---------------------------------------------
+            pdf.cell(40, 8, clean_text(f"{perf_val:.2f}"), border=1, align='C', ln=True)
 
     temp_pdf = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
     pdf.output(temp_pdf.name)
