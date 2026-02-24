@@ -344,7 +344,6 @@ def crear_pdf(area, fecha):
     if not df_fallas_area.empty:
         top_fallas = df_fallas_area.groupby('Nivel Evento 6')['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False).head(10)
         
-        # MARGEN INFERIOR AUMENTADO A 150 PARA EVITAR CORTE DE TEXTO
         fig_fallas = px.bar(top_fallas, x='Nivel Evento 6', y='Tiempo (Min)', title=f"Top 10 Fallas - {area}", color='Tiempo (Min)', color_continuous_scale='Reds', text='Tiempo (Min)')
         fig_fallas.update_traces(texttemplate='%{text:.1f}', textposition='outside', cliponaxis=False)
         fig_fallas.update_layout(width=800, height=450, margin=dict(t=80, b=150, l=40, r=40))
@@ -415,7 +414,6 @@ def crear_pdf(area, fecha):
     if not df_prod_pdf.empty and 'Buenas' in df_prod_pdf.columns:
         prod_maq = df_prod_pdf.groupby('Máquina')[['Buenas', 'Retrabajo', 'Observadas']].sum().reset_index()
         
-        # MARGEN INFERIOR AUMENTADO A 150
         fig_prod = px.bar(prod_maq, x='Máquina', y=['Buenas', 'Retrabajo', 'Observadas'], barmode='stack', color_discrete_sequence=['#1F77B4', '#FF7F0E', '#d62728'], text_auto=True)
         fig_prod.update_layout(width=800, height=450, margin=dict(t=60, b=150, l=40, r=40))
         
@@ -454,22 +452,22 @@ def crear_pdf(area, fecha):
     if not df_pdf.empty:
         op_tiempos = df_pdf.groupby('Operador')['Tiempo (Min)'].sum().reset_index()
         
-        # CRUZAR PERFORMANCE CON LIMPIEZA DE ESPACIOS Y MAYÚSCULAS PARA EVITAR 0.00
+        # CRUZAR PERFORMANCE CON NOMBRES EXACTOS (Sólo se limpian espacios extremos)
         if not df_op_pdf.empty:
             c_op_name = next((c for c in df_op_pdf.columns if 'operador' in c.lower() or 'nombre' in c.lower()), None)
             c_perf = next((c for c in df_op_pdf.columns if 'performance' in c.lower()), None)
             
             if c_op_name and c_perf:
-                # Normalizamos nombres (quitar espacios y pasar a mayúscula)
-                op_tiempos['Key'] = op_tiempos['Operador'].astype(str).str.strip().str.upper()
+                op_tiempos['Op_Clean'] = op_tiempos['Operador'].astype(str).str.strip()
                 df_op_temp = df_op_pdf.copy()
-                df_op_temp['Key'] = df_op_temp[c_op_name].astype(str).str.strip().str.upper()
+                df_op_temp['Op_Clean'] = df_op_temp[c_op_name].astype(str).str.strip()
                 
-                # Eliminamos duplicados por si el operario fichó varias veces
-                df_op_temp = df_op_temp.drop_duplicates(subset=['Key'])
+                # En caso de duplicados, tomamos el valor máximo
+                df_op_temp[c_perf] = pd.to_numeric(df_op_temp[c_perf], errors='coerce').fillna(0.0)
+                perf_agg = df_op_temp.groupby('Op_Clean')[c_perf].max().reset_index()
                 
-                op_merged = pd.merge(op_tiempos, df_op_temp[['Key', c_perf]], on='Key', how='left')
-                op_merged['Performance_Final'] = pd.to_numeric(op_merged[c_perf], errors='coerce').fillna(0.0)
+                op_merged = pd.merge(op_tiempos, perf_agg, on='Op_Clean', how='left')
+                op_merged['Performance_Final'] = op_merged[c_perf].fillna(0.0)
             else:
                 op_merged = op_tiempos
                 op_merged['Performance_Final'] = 0.0
@@ -479,7 +477,6 @@ def crear_pdf(area, fecha):
 
         op_merged = op_merged.sort_values('Tiempo (Min)', ascending=False)
 
-        # MARGEN INFERIOR AUMENTADO A 150
         fig_op = px.bar(op_merged, x='Operador', y='Tiempo (Min)', color='Tiempo (Min)', color_continuous_scale='Blues', text='Tiempo (Min)')
         fig_op.update_traces(texttemplate='%{text:.1f}', textposition='outside', cliponaxis=False)
         fig_op.update_layout(width=800, height=450, margin=dict(t=80, b=150, l=40, r=40))
@@ -506,7 +503,6 @@ def crear_pdf(area, fecha):
             
             pdf.cell(70, 8, clean_text(str(row['Operador'])[:35]), border=1)
             pdf.cell(40, 8, clean_text(f"{row['Tiempo (Min)']:.1f}"), border=1, align='C')
-            # Imprime el valor de Google Sheets con dos decimales exactos
             pdf.cell(40, 8, clean_text(f"{perf_val:.2f}"), border=1, align='C', ln=True)
 
     temp_pdf = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
