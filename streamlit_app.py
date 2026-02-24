@@ -53,12 +53,11 @@ def load_data():
             
             col_fecha = next((c for c in df.columns if 'fecha' in c.lower()), None)
             if col_fecha:
-                # CORRECCIÓN: Convertir a dt.date puro para evitar problemas con las horas en los filtros
+                # Normalizamos estrictamente a Timestamp para evitar fallos en los filtros
                 df['Fecha_DT'] = pd.to_datetime(df[col_fecha], dayfirst=True, errors='coerce')
-                df['Fecha_Filtro'] = df['Fecha_DT'].dt.date
+                df['Fecha_Filtro'] = df['Fecha_DT'].dt.normalize()
                 df = df.dropna(subset=['Fecha_Filtro'])
             
-            # Ampliamos para capturar columnas de inicio y fin si existen
             cols_texto = ['Fábrica', 'Máquina', 'Evento', 'Código', 'Operador', 'Nivel Evento 3', 'Nivel Evento 4', 'Nivel Evento 6', 'Nombre', 'Inicio', 'Fin', 'Desde', 'Hasta']
             for c_txt in cols_texto:
                 matches = [col for col in df.columns if c_txt.lower() in col.lower()]
@@ -82,7 +81,7 @@ if df_raw.empty:
 # 3. FILTROS GLOBALES
 # ==========================================
 st.sidebar.header("📅 Rango de tiempo")
-min_d, max_d = df_raw['Fecha_Filtro'].min(), df_raw['Fecha_Filtro'].max()
+min_d, max_d = df_raw['Fecha_Filtro'].min().date(), df_raw['Fecha_Filtro'].max().date()
 rango = st.sidebar.date_input("Periodo", [min_d, max_d], min_value=min_d, max_value=max_d, key="main_date_filter")
 
 st.sidebar.divider()
@@ -95,7 +94,7 @@ opciones_maquinas = sorted(df_raw[df_raw['Fábrica'].isin(fábricas)]['Máquina'
 máquinas_globales = st.sidebar.multiselect("Máquina", opciones_maquinas, default=opciones_maquinas)
 
 if isinstance(rango, (list, tuple)) and len(rango) == 2:
-    ini, fin = rango[0], rango[1]
+    ini, fin = pd.to_datetime(rango[0]).normalize(), pd.to_datetime(rango[1]).normalize()
     df_f = df_raw[(df_raw['Fecha_Filtro'] >= ini) & (df_raw['Fecha_Filtro'] <= fin)]
     df_f = df_f[df_f['Fábrica'].isin(fábricas) & df_f['Máquina'].isin(máquinas_globales)]
     df_oee_f = df_oee_raw[(df_oee_raw['Fecha_Filtro'] >= ini) & (df_oee_raw['Fecha_Filtro'] <= fin)] if not df_oee_raw.empty else pd.DataFrame()
@@ -273,13 +272,17 @@ def get_metrics_pdf(name_filter, df_oee_target):
     return m
 
 def crear_pdf(area, fecha):
-    # El filtro de fecha ahora funciona con un objeto `date` puro (== fecha), descartando problemas de horas
-    df_pdf = df_raw[(df_raw['Fecha_Filtro'] == fecha) & (df_raw['Fábrica'].str.contains(area, case=False))]
-    df_oee_pdf = df_oee_raw[df_oee_raw['Fecha_Filtro'] == fecha]
+    # CORRECCIÓN DE FECHA: Normalizamos a Timestamp 00:00:00 para asegurar el filtro
+    fecha_target = pd.to_datetime(fecha).normalize()
+    
+    # Filtramos por fecha exacta y área
+    df_pdf = df_raw[(df_raw['Fecha_Filtro'] == fecha_target) & (df_raw['Fábrica'].str.contains(area, case=False))].copy()
+    df_oee_pdf = df_oee_raw[df_oee_raw['Fecha_Filtro'] == fecha_target].copy()
+    
     df_prod_pdf = pd.DataFrame()
     if not df_prod_raw.empty:
-        df_prod_pdf = df_prod_raw[(df_prod_raw['Fecha_Filtro'] == fecha) & 
-                                  (df_prod_raw['Máquina'].str.contains(area, case=False) | df_prod_raw['Máquina'].isin(df_pdf['Máquina'].unique()))]
+        df_prod_pdf = df_prod_raw[(df_prod_raw['Fecha_Filtro'] == fecha_target) & 
+                                  (df_prod_raw['Máquina'].str.contains(area, case=False) | df_prod_raw['Máquina'].isin(df_pdf['Máquina'].unique()))].copy()
 
     pdf = FPDF()
     pdf.add_page()
@@ -317,7 +320,10 @@ def crear_pdf(area, fecha):
     if not df_fallas_area.empty:
         # Gráfico Top 10 Fallas (General del área)
         top_fallas = df_fallas_area.groupby('Nivel Evento 6')['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False).head(10)
+        
+        # Ajustamos el tamaño del gráfico para que no ocupe toda la hoja (width=800, height=350)
         fig_fallas = px.bar(top_fallas, x='Nivel Evento 6', y='Tiempo (Min)', title=f"Top 10 Fallas - {area}", color='Tiempo (Min)', color_continuous_scale='Reds')
+        fig_fallas.update_layout(width=800, height=350, margin=dict(t=40, b=20, l=20, r=20))
         
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
             fig_fallas.write_image(tmpfile.name, engine="kaleido")
@@ -349,10 +355,11 @@ def crear_pdf(area, fecha):
             pdf.set_font("Arial", '', 8)
             df_maq = df_fallas_area[df_fallas_area['Máquina'] == maq]
             
-            # Agrupamos los datos para evitar registros duplicados en el mismo rango de hora y sumar si hubo pausas idénticas
-            cols_agrupar = [col for col in [col_inicio, col_fin, 'Nivel Evento 6', 'Operador'] if col is not None]
-            if cols_agrupar:
-                df_maq = df_maq.groupby(cols_agrupar)['Tiempo (Min)'].sum().reset_index()
+            # CORRECCIÓN DE LA SUMA DUPLICADA: Ya no agrupamos y sumamos. 
+            # Eliminamos filas duplicadas por si Google Sheets tiene dobles ingresos idénticos.
+            cols_dup = [c for c in [col_inicio, col_fin, 'Nivel Evento 6', 'Operador'] if c is not None]
+            if cols_dup:
+                df_maq = df_maq.drop_duplicates(subset=cols_dup)
             
             df_maq = df_maq.sort_values('Tiempo (Min)', ascending=False)
             
@@ -363,30 +370,34 @@ def crear_pdf(area, fecha):
                 pdf.cell(20, 8, val_inicio[:8], border=1, align='C')
                 pdf.cell(20, 8, val_fin[:8], border=1, align='C')
                 pdf.cell(80, 8, str(row['Nivel Evento 6'])[:40], border=1)
-                pdf.cell(20, 8, f"{row['Tiempo (Min)']:.1f}", border=1, align='C') # Formato a 1 decimal
+                pdf.cell(20, 8, f"{row['Tiempo (Min)']:.1f}", border=1, align='C')
                 pdf.cell(50, 8, str(row['Operador'])[:25], border=1, ln=True)
             pdf.ln(3) 
             
-    pdf.add_page()
+    pdf.ln(5) # Fluimos a la siguiente sección sin forzar salto
     
-    # 3. PRODUCCIÓN VS PARADA (Con Colores)
+    # 3. PRODUCCIÓN VS PARADA (Con Colores y Tamaño Reducido)
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, "3. Relación Producción vs Parada", ln=True)
     if not df_pdf.empty:
         df_pdf['Tipo'] = df_pdf['Evento'].apply(lambda x: 'Producción' if 'Producción' in str(x) else 'Parada')
         fig_pie = px.pie(df_pdf, values='Tiempo (Min)', names='Tipo', hole=0.4, color='Tipo', color_discrete_map={'Producción':'#2CA02C', 'Parada':'#D62728'})
+        fig_pie.update_layout(width=500, height=350, margin=dict(t=20, b=20, l=20, r=20))
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile2:
             fig_pie.write_image(tmpfile2.name, engine="kaleido")
-            pdf.image(tmpfile2.name, w=130)
+            pdf.image(tmpfile2.name, w=110)
             os.remove(tmpfile2.name)
 
+    pdf.ln(5)
+    
     # 4. PRODUCCIÓN POR MÁQUINA
-    pdf.add_page()
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, "4. Producción por Máquina", ln=True)
     if not df_prod_pdf.empty and 'Buenas' in df_prod_pdf.columns:
         prod_maq = df_prod_pdf.groupby('Máquina')[['Buenas', 'Retrabajo', 'Observadas']].sum().reset_index()
         fig_prod = px.bar(prod_maq, x='Máquina', y=['Buenas', 'Retrabajo', 'Observadas'], barmode='stack', color_discrete_sequence=['#1F77B4', '#FF7F0E', '#d62728'])
+        fig_prod.update_layout(width=800, height=350, margin=dict(t=40, b=20, l=20, r=20))
+        
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile3:
             fig_prod.write_image(tmpfile3.name, engine="kaleido")
             pdf.image(tmpfile3.name, w=170)
@@ -415,13 +426,16 @@ def crear_pdf(area, fecha):
             pdf.cell(25, 8, str(int(row['Retrabajo'])), border=1, align='C')
             pdf.cell(30, 8, str(int(row['Observadas'])), border=1, align='C', ln=True)
 
+    pdf.ln(5)
+
     # 5. TIEMPOS POR OPERARIO
-    pdf.add_page()
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, "5. Tiempos por Operario", ln=True)
     if not df_pdf.empty:
         op_tiempos = df_pdf.groupby('Operador')['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False)
         fig_op = px.bar(op_tiempos, x='Operador', y='Tiempo (Min)', color='Tiempo (Min)', color_continuous_scale='Blues')
+        fig_op.update_layout(width=800, height=350, margin=dict(t=40, b=20, l=20, r=20))
+        
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile4:
             fig_op.write_image(tmpfile4.name, engine="kaleido")
             pdf.image(tmpfile4.name, w=170)
