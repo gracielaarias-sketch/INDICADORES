@@ -1,12 +1,3 @@
-¡Entendido! Vamos a hacer esos dos ajustes con precisión quirúrgica:
-
-Aumento de márgenes: Le daremos un margen superior (t=120) y ajustaremos la altura general de los gráficos a height=400 para asegurarnos de que el número que está por encima de la barra más alta tenga espacio de sobra para "respirar" y no salga cortado en el PNG final.
-
-Performance cruda: Quité toda la lógica matemática de conversión a porcentaje. Ahora tomará el valor exacto de la pestaña operarios (df_operarios_raw), forzará que sea numérico para evitar errores y lo imprimirá tal cual con dos decimales (por ejemplo, 0.85 o 85.50 según como venga de Google Sheets).
-
-Aquí tienes el código completo con estas correcciones implementadas:
-
-Python
 import streamlit as st
 import pandas as pd
 import plotly.express as px
