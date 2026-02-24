@@ -482,7 +482,7 @@ def crear_pdf(area, fecha):
     # =========================================================
     # 6. TABLA INDEPENDIENTE: PERFORMANCE GENERAL DE OPERARIOS
     # =========================================================
-    pdf.add_page() # Lo enviamos a una página limpia para no agolpar datos
+    pdf.ln(5) # Sin salto de página, fluye natural
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, clean_text("6. Performance de Operarios (Día Seleccionado)"), ln=True)
     
@@ -491,7 +491,6 @@ def crear_pdf(area, fecha):
         c_perf = next((c for c in df_op_pdf.columns if 'performance' in c.lower()), None)
         
         if c_op_name and c_perf:
-            # Ordenamos alfabéticamente a los operarios
             df_op_print = df_op_pdf.sort_values(c_op_name)
             
             pdf.set_font("Arial", 'B', 10)
@@ -500,7 +499,6 @@ def crear_pdf(area, fecha):
             
             pdf.set_font("Arial", '', 10)
             for _, row in df_op_print.iterrows():
-                # Convertimos y formateamos para evitar errores de impresión
                 perf_val = pd.to_numeric(row[c_perf], errors='coerce')
                 perf_str = f"{perf_val:.2f}" if pd.notna(perf_val) else "-"
                 
