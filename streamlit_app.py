@@ -53,8 +53,9 @@ def load_data():
             
             col_fecha = next((c for c in df.columns if 'fecha' in c.lower()), None)
             if col_fecha:
+                # CORRECCIÓN: Convertir a dt.date puro para evitar problemas con las horas en los filtros
                 df['Fecha_DT'] = pd.to_datetime(df[col_fecha], dayfirst=True, errors='coerce')
-                df['Fecha_Filtro'] = df['Fecha_DT'].dt.normalize()
+                df['Fecha_Filtro'] = df['Fecha_DT'].dt.date
                 df = df.dropna(subset=['Fecha_Filtro'])
             
             # Ampliamos para capturar columnas de inicio y fin si existen
@@ -81,7 +82,7 @@ if df_raw.empty:
 # 3. FILTROS GLOBALES
 # ==========================================
 st.sidebar.header("📅 Rango de tiempo")
-min_d, max_d = df_raw['Fecha_Filtro'].min().date(), df_raw['Fecha_Filtro'].max().date()
+min_d, max_d = df_raw['Fecha_Filtro'].min(), df_raw['Fecha_Filtro'].max()
 rango = st.sidebar.date_input("Periodo", [min_d, max_d], min_value=min_d, max_value=max_d, key="main_date_filter")
 
 st.sidebar.divider()
@@ -94,7 +95,7 @@ opciones_maquinas = sorted(df_raw[df_raw['Fábrica'].isin(fábricas)]['Máquina'
 máquinas_globales = st.sidebar.multiselect("Máquina", opciones_maquinas, default=opciones_maquinas)
 
 if isinstance(rango, (list, tuple)) and len(rango) == 2:
-    ini, fin = pd.to_datetime(rango[0]), pd.to_datetime(rango[1])
+    ini, fin = rango[0], rango[1]
     df_f = df_raw[(df_raw['Fecha_Filtro'] >= ini) & (df_raw['Fecha_Filtro'] <= fin)]
     df_f = df_f[df_f['Fábrica'].isin(fábricas) & df_f['Máquina'].isin(máquinas_globales)]
     df_oee_f = df_oee_raw[(df_oee_raw['Fecha_Filtro'] >= ini) & (df_oee_raw['Fecha_Filtro'] <= fin)] if not df_oee_raw.empty else pd.DataFrame()
@@ -207,7 +208,7 @@ if not df_prod_f.empty:
         st.plotly_chart(px.bar(df_st, x=c_maq, y=[c_b, c_r, c_o], title="Balance Producción", barmode='stack'), use_container_width=True)
     
         with st.expander("📂 Tablas Detalladas por Código, Máquina y Fecha"):
-            df_prod_f['Fecha_Str'] = df_prod_f['Fecha_Filtro'].dt.strftime('%d-%m-%Y')
+            df_prod_f['Fecha_Str'] = pd.to_datetime(df_prod_f['Fecha_Filtro']).dt.strftime('%d-%m-%Y')
             cols_group = [col for col in [c_cod, c_maq, 'Fecha_Str'] if col is not None]
             df_tab = df_prod_f.groupby(cols_group)[[c_b, c_r, c_o]].sum().reset_index()
             sort_cols = [c for c in [c_cod, 'Fecha_Str'] if c in df_tab.columns]
@@ -272,13 +273,12 @@ def get_metrics_pdf(name_filter, df_oee_target):
     return m
 
 def crear_pdf(area, fecha):
-    # Filtro estricto normalizado para evitar acumulación de datos
-    fecha_dt = pd.to_datetime(fecha).normalize()
-    df_pdf = df_raw[(df_raw['Fecha_Filtro'] == fecha_dt) & (df_raw['Fábrica'].str.contains(area, case=False))]
-    df_oee_pdf = df_oee_raw[df_oee_raw['Fecha_Filtro'] == fecha_dt]
+    # El filtro de fecha ahora funciona con un objeto `date` puro (== fecha), descartando problemas de horas
+    df_pdf = df_raw[(df_raw['Fecha_Filtro'] == fecha) & (df_raw['Fábrica'].str.contains(area, case=False))]
+    df_oee_pdf = df_oee_raw[df_oee_raw['Fecha_Filtro'] == fecha]
     df_prod_pdf = pd.DataFrame()
     if not df_prod_raw.empty:
-        df_prod_pdf = df_prod_raw[(df_prod_raw['Fecha_Filtro'] == fecha_dt) & 
+        df_prod_pdf = df_prod_raw[(df_prod_raw['Fecha_Filtro'] == fecha) & 
                                   (df_prod_raw['Máquina'].str.contains(area, case=False) | df_prod_raw['Máquina'].isin(df_pdf['Máquina'].unique()))]
 
     pdf = FPDF()
@@ -292,12 +292,21 @@ def crear_pdf(area, fecha):
     pdf.cell(0, 10, f"Fecha del Reporte: {fecha.strftime('%d-%m-%Y')}", ln=True, align='C')
     pdf.ln(5)
 
-    # 1. OEE DEL ÁREA
+    # 1. OEE DEL ÁREA Y MÁQUINAS
     pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, "1. OEE del Área", ln=True)
-    pdf.set_font("Arial", size=10)
+    pdf.cell(0, 10, "1. OEE del Área y Máquinas", ln=True)
+    pdf.set_font("Arial", 'B', 10)
+    
+    # OEE General del Área
     metrics_area = get_metrics_pdf(area, df_oee_pdf)
-    pdf.cell(0, 8, f"OEE General: {metrics_area['OEE']:.1%} | Disponibilidad: {metrics_area['DISP']:.1%} | Performance: {metrics_area['PERF']:.1%} | Calidad: {metrics_area['CAL']:.1%}", ln=True)
+    pdf.cell(0, 8, f"General {area.upper()} | OEE: {metrics_area['OEE']:.1%} | Disp: {metrics_area['DISP']:.1%} | Perf: {metrics_area['PERF']:.1%} | Calidad: {metrics_area['CAL']:.1%}", ln=True)
+    
+    # OEE por Línea/Máquina según el área
+    pdf.set_font("Arial", '', 10)
+    lineas = ['L1', 'L2', 'L3', 'L4'] if area.upper() == 'ESTAMPADO' else ['CELDA', 'PRP']
+    for l in lineas:
+        m_l = get_metrics_pdf(l, df_oee_pdf)
+        pdf.cell(0, 6, f"   -> {l}  -  OEE: {m_l['OEE']:.1%} | Disp: {m_l['DISP']:.1%} | Perf: {m_l['PERF']:.1%} | Calidad: {m_l['CAL']:.1%}", ln=True)
     pdf.ln(5)
 
     # 2. ANÁLISIS DE FALLAS
@@ -306,7 +315,7 @@ def crear_pdf(area, fecha):
     df_fallas_area = df_pdf[df_pdf['Nivel Evento 3'].astype(str).str.contains('FALLA', case=False)]
     
     if not df_fallas_area.empty:
-        # Gráfico Top 10 Fallas (General del área, con colores)
+        # Gráfico Top 10 Fallas (General del área)
         top_fallas = df_fallas_area.groupby('Nivel Evento 6')['Tiempo (Min)'].sum().reset_index().sort_values('Tiempo (Min)', ascending=False).head(10)
         fig_fallas = px.bar(top_fallas, x='Nivel Evento 6', y='Tiempo (Min)', title=f"Top 10 Fallas - {area}", color='Tiempo (Min)', color_continuous_scale='Reds')
         
@@ -322,17 +331,14 @@ def crear_pdf(area, fecha):
         pdf.cell(0, 8, "Detalle de Fallas por Máquina:", ln=True)
         pdf.ln(2)
         
-        # Búsqueda dinámica de columnas de inicio y fin
         col_inicio = next((c for c in df_pdf.columns if 'inicio' in c.lower() or 'desde' in c.lower()), None)
         col_fin = next((c for c in df_pdf.columns if 'fin' in c.lower() or 'hasta' in c.lower()), None)
 
         maquinas_con_fallas = sorted(df_fallas_area['Máquina'].unique())
         for maq in maquinas_con_fallas:
-            # Subtítulo Máquina
             pdf.set_font("Arial", 'B', 9)
             pdf.cell(0, 8, f"-> Máquina: {maq}", ln=True)
             
-            # Encabezado de Tabla
             pdf.set_font("Arial", 'B', 8)
             pdf.cell(20, 8, "Inicio", border=1, align='C')
             pdf.cell(20, 8, "Fin", border=1, align='C')
@@ -340,9 +346,15 @@ def crear_pdf(area, fecha):
             pdf.cell(20, 8, "Minutos", border=1, align='C')
             pdf.cell(50, 8, "Levantó la falla", border=1, ln=True)
             
-            # Datos (Ordenados de mayor a menor tiempo)
             pdf.set_font("Arial", '', 8)
-            df_maq = df_fallas_area[df_fallas_area['Máquina'] == maq].sort_values('Tiempo (Min)', ascending=False)
+            df_maq = df_fallas_area[df_fallas_area['Máquina'] == maq]
+            
+            # Agrupamos los datos para evitar registros duplicados en el mismo rango de hora y sumar si hubo pausas idénticas
+            cols_agrupar = [col for col in [col_inicio, col_fin, 'Nivel Evento 6', 'Operador'] if col is not None]
+            if cols_agrupar:
+                df_maq = df_maq.groupby(cols_agrupar)['Tiempo (Min)'].sum().reset_index()
+            
+            df_maq = df_maq.sort_values('Tiempo (Min)', ascending=False)
             
             for _, row in df_maq.iterrows():
                 val_inicio = str(row[col_inicio]) if col_inicio and str(row[col_inicio]) != 'nan' else "-"
@@ -351,9 +363,9 @@ def crear_pdf(area, fecha):
                 pdf.cell(20, 8, val_inicio[:8], border=1, align='C')
                 pdf.cell(20, 8, val_fin[:8], border=1, align='C')
                 pdf.cell(80, 8, str(row['Nivel Evento 6'])[:40], border=1)
-                pdf.cell(20, 8, str(row['Tiempo (Min)']), border=1, align='C')
+                pdf.cell(20, 8, f"{row['Tiempo (Min)']:.1f}", border=1, align='C') # Formato a 1 decimal
                 pdf.cell(50, 8, str(row['Operador'])[:25], border=1, ln=True)
-            pdf.ln(3) # Espacio entre máquinas
+            pdf.ln(3) 
             
     pdf.add_page()
     
@@ -373,7 +385,6 @@ def crear_pdf(area, fecha):
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, "4. Producción por Máquina", ln=True)
     if not df_prod_pdf.empty and 'Buenas' in df_prod_pdf.columns:
-        # Gráfico (Con Colores)
         prod_maq = df_prod_pdf.groupby('Máquina')[['Buenas', 'Retrabajo', 'Observadas']].sum().reset_index()
         fig_prod = px.bar(prod_maq, x='Máquina', y=['Buenas', 'Retrabajo', 'Observadas'], barmode='stack', color_discrete_sequence=['#1F77B4', '#FF7F0E', '#d62728'])
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile3:
@@ -382,7 +393,7 @@ def crear_pdf(area, fecha):
             os.remove(tmpfile3.name)
             
         pdf.ln(5)
-        # Tabla de Producción (Código, Buenas, Retrabajo, Observadas)
+        # Tabla de Producción
         pdf.set_font("Arial", 'B', 10)
         pdf.cell(0, 8, "Desglose por Código de Producto:", ln=True)
         pdf.set_font("Arial", 'B', 8)
@@ -396,7 +407,6 @@ def crear_pdf(area, fecha):
         pdf.set_font("Arial", '', 8)
         c_cod = next((c for c in df_prod_pdf.columns if 'código' in c.lower() or 'codigo' in c.lower()), 'Código')
         
-        # Agrupar datos de producción para la tabla
         df_prod_group = df_prod_pdf.groupby(['Máquina', c_cod])[['Buenas', 'Retrabajo', 'Observadas']].sum().reset_index().sort_values('Máquina')
         for _, row in df_prod_group.iterrows():
             pdf.cell(40, 8, str(row['Máquina'])[:20], border=1)
@@ -405,7 +415,7 @@ def crear_pdf(area, fecha):
             pdf.cell(25, 8, str(int(row['Retrabajo'])), border=1, align='C')
             pdf.cell(30, 8, str(int(row['Observadas'])), border=1, align='C', ln=True)
 
-    # 5. TIEMPOS POR OPERARIO (Con colores)
+    # 5. TIEMPOS POR OPERARIO
     pdf.add_page()
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, "5. Tiempos por Operario", ln=True)
@@ -417,7 +427,6 @@ def crear_pdf(area, fecha):
             pdf.image(tmpfile4.name, w=170)
             os.remove(tmpfile4.name)
 
-    # Retornar el archivo temporal para descargar
     temp_pdf = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
     pdf.output(temp_pdf.name)
     with open(temp_pdf.name, "rb") as f:
